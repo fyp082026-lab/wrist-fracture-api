@@ -75,14 +75,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up SSH
+      - name: Check required secrets
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+          [ -n "$EC2_HOST" ] || { echo "EC2_HOST secret is missing"; exit 1; }
+          [ -n "$EC2_USER" ] || { echo "EC2_USER secret is missing"; exit 1; }
+          [ -n "$SSH_KEY" ]  || { echo "EC2_SSH_KEY secret is missing"; exit 1; }
 
       - name: Copy deploy files to server
         run: |
