@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+supabase
+pillow
+python-multipart
+ultralytics
+timm

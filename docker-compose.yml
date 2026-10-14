@@ -1,0 +1,18 @@
+services:
+  api:
+    # CI/CD sets IMAGE to the freshly built tag. Locally, `docker compose up --build` still works.
+    image: ${IMAGE:-wrist-api:local}
+    build: .
+    container_name: wrist-api
+    restart: always
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./models:/srv/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
