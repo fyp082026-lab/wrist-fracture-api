@@ -121,7 +121,10 @@ class AnalyzeRequest(BaseModel):
 def verify_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "Invalid auth header")
-    res = supabase.auth.get_user(authorization.split(" ", 1)[1])
+    try:
+        res = supabase.auth.get_user(authorization.split(" ", 1)[1])
+    except Exception:  # malformed, bad signature, expired: always a 401, never a 500
+        raise HTTPException(401, "Invalid or expired token")
     if not res or not res.user:
         raise HTTPException(401, "Invalid or expired token")
     return res.user
