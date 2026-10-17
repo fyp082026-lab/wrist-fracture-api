@@ -5,3 +5,7 @@ __pycache__
 .git
 models
 *.zip
+admin/node_modules
+admin/dist
+mobile
+.github

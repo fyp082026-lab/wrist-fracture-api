@@ -203,3 +203,12 @@ def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
     except Exception as e:
         supabase.table("scans").update({"status": "failed"}).eq("id", req.scan_id).execute()
         raise HTTPException(500, str(e))
+
+
+# ---------------------------------------------------------------------------
+# Admin monitoring: JSON API under /admin/api, website under /admin.
+# ---------------------------------------------------------------------------
+from app.admin import build_admin_router, mount_admin_site
+
+app.include_router(build_admin_router(supabase, verify_token))
+mount_admin_site(app, os.environ.get("ADMIN_SITE_DIR", "/srv/admin_site"))

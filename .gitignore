@@ -18,3 +18,19 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+# Node
+node_modules/
+admin/dist/
+
+# Mobile build output
+mobile/android/
+mobile/ios/
+mobile/.expo/
+*.apk
+
+# Public client config is committed on purpose (see the files themselves)
+!admin/.env
+!mobile/.env
+
+# Local tool config
+.claude/

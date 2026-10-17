@@ -6,6 +6,9 @@ services:
     container_name: wrist-api
     restart: always
     env_file: .env
+    environment:
+      # Accounts allowed into the admin website (comma separated).
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-fyp082026@gmail.com}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
