@@ -79,8 +79,13 @@ jobs:
             enc() { sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}'; }
             what=$(grep -A 25 -m 1 "What went wrong" build.log | enc)
             [ -n "$what" ] && echo "::error title=Gradle: what went wrong::$what"
-            errs=$(grep -E "^e: |error:|ERROR:|Could not |FAILED" build.log | head -n 20 | enc)
-            [ -n "$errs" ] && echo "::error title=Gradle: first errors::$errs"
+            line=$(grep -n -m 1 -E "^> Task .* FAILED|FAILED$" build.log | cut -d: -f1)
+            if [ -n "$line" ]; then
+              ctx=$(head -n "$line" build.log | tail -n 40 | enc)
+              echo "::error title=Gradle: output before the failed task::$ctx"
+            fi
+            errs=$(grep -iE "^e: |error|could not|cannot find|unable to" build.log | grep -v "What went wrong" | head -n 25 | enc)
+            [ -n "$errs" ] && echo "::error title=Gradle: error lines::$errs"
           fi
           exit $status
 
