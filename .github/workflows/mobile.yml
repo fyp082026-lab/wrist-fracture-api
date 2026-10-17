@@ -72,19 +72,21 @@ jobs:
         run: |
           echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g" >> gradle.properties
           set +e
-          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee build.log
+          ./gradlew assembleRelease --no-daemon --stacktrace -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             # Put the cause on the run summary page, so it is readable without opening the log.
             enc() { sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}'; }
             what=$(grep -A 25 -m 1 "What went wrong" build.log | enc)
             [ -n "$what" ] && echo "::error title=Gradle: what went wrong::$what"
-            line=$(grep -n -m 1 -E "^> Task .* FAILED|FAILED$" build.log | cut -d: -f1)
+            line=$(grep -n -m 1 -E "^> Task .* FAILED|^FAILURE: " build.log | cut -d: -f1)
             if [ -n "$line" ]; then
-              ctx=$(head -n "$line" build.log | tail -n 40 | enc)
+              ctx=$(head -n "$line" build.log | grep -v "SKIPPED$|UP-TO-DATE$|NO-SOURCE$" | tail -n 45 | enc)
               echo "::error title=Gradle: output before the failed task::$ctx"
             fi
-            errs=$(grep -iE "^e: |error|could not|cannot find|unable to" build.log | grep -v "What went wrong" | head -n 25 | enc)
+            st=$(grep -A 30 -m 1 "^* Exception is:" build.log | grep -E "Exception|Caused by|at expo|at com.facebook|build.gradle|settings.gradle" | head -n 25 | enc)
+            [ -n "$st" ] && echo "::error title=Gradle: stack trace::$st"
+            errs=$(grep -iE "^e: |error|could not|cannot find|unable to" build.log | grep -v "checkKotlinGradlePluginConfigurationErrors" | grep -v "What went wrong" | head -n 25 | enc)
             [ -n "$errs" ] && echo "::error title=Gradle: error lines::$errs"
           fi
           exit $status
