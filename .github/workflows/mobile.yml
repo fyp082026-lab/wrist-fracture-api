@@ -71,7 +71,18 @@ jobs:
           NODE_ENV: production
         run: |
           echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g" >> gradle.properties
-          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+          set +e
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # Put the cause on the run summary page, so it is readable without opening the log.
+            enc() { sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}'; }
+            what=$(grep -A 25 -m 1 "What went wrong" build.log | enc)
+            [ -n "$what" ] && echo "::error title=Gradle: what went wrong::$what"
+            errs=$(grep -E "^e: |error:|ERROR:|Could not |FAILED" build.log | head -n 20 | enc)
+            [ -n "$errs" ] && echo "::error title=Gradle: first errors::$errs"
+          fi
+          exit $status
 
       - name: Name the APK
         id: apk
