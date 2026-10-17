@@ -65,32 +65,13 @@ jobs:
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install --clean
 
-      - name: Record failing node calls made by Gradle
-        run: |
-          # Gradle hides the error output of the node commands it runs; this
-          # wrapper keeps a log of any that fail so the build step can report it.
-          mkdir -p "$RUNNER_TEMP/nodeshim"
-          cat > "$RUNNER_TEMP/nodeshim/node" <<'EOF'
-          #!/usr/bin/env bash
-          err=$(mktemp)
-          "__REAL__" "$@" 2>"$err"
-          code=$?
-          cat "$err" >&2
-          if [ $code -ne 0 ]; then
-            { echo "node $* (cwd $PWD, exit $code)"; tail -n 25 "$err"; echo; } >> "__LOG__"
-          fi
-          exit $code
-          EOF
-          sed -i -e "s|__REAL__|$(command -v node)|" -e "s|__LOG__|$RUNNER_TEMP/node-failures.log|" "$RUNNER_TEMP/nodeshim/node"
-          chmod +x "$RUNNER_TEMP/nodeshim/node"
-          echo "$RUNNER_TEMP/nodeshim" >> "$GITHUB_PATH"
-
       - name: Build release APK
         working-directory: mobile/android
         env:
           NODE_ENV: production
         run: |
-          echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g" >> gradle.properties
+          # Leading newline: the generated gradle.properties has no trailing one.
+          printf '\norg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g\n' >> gradle.properties
           set +e
           ./gradlew assembleRelease --no-daemon --stacktrace -PreactNativeArchitectures=arm64-v8a,armeabi-v7a 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
@@ -108,10 +89,6 @@ jobs:
             [ -n "$st" ] && echo "::error title=Gradle: stack trace::$st"
             errs=$(grep -iE "^e: |error|could not|cannot find|unable to" build.log | grep -v "checkKotlinGradlePluginConfigurationErrors" | grep -v "What went wrong" | head -n 25 | enc)
             [ -n "$errs" ] && echo "::error title=Gradle: error lines::$errs"
-            if [ -s "$RUNNER_TEMP/node-failures.log" ]; then
-              nf=$(tail -n 40 "$RUNNER_TEMP/node-failures.log" | enc)
-              echo "::error title=Failing node call::$nf"
-            fi
           fi
           exit $status
 
