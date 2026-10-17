@@ -65,6 +65,23 @@ jobs:
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install --clean
 
+      - name: Check Expo autolinking (same call Gradle makes)
+        working-directory: mobile/android
+        run: |
+          E="$PWD/../node_modules/expo/android"
+          set +e
+          out=$(node --eval "require('expo/bin/autolinking')" expo-modules-autolinking mirror-kotlin-inline-modules \
+            --kotlin-files-mirror-directory "$(realpath "$E")/src/main/java/inline/modules" \
+            --inline-modules-list-directory "$(realpath "$E")/build/inline/modules" \
+            --watched-directories-serialized "$(grep -m1 '^expo.inlineModules.watchedDirectories=' gradle.properties | cut -d= -f2- || echo '[]')" 2>&1)
+          status=$?
+          echo "$out"
+          if [ $status -ne 0 ]; then
+            msg=$(printf '%s\n' "$out" | tail -n 30 | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')
+            echo "::error title=Expo autolinking failed::$msg"
+          fi
+          exit $status
+
       - name: Build release APK
         working-directory: mobile/android
         env:
