@@ -203,7 +203,9 @@ def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
             "grad_cam_path": None,
             "clinical_disclaimer": DISCLAIMER,
         }
-        supabase.table("analysis_results").upsert(payload, on_conflict="scan_id").execute()
+        # Also fill the table's original columns (user_id, fracture_confidence).
+        row = {**payload, "user_id": user.id, "fracture_confidence": payload["confidence"]}
+        supabase.table("analysis_results").upsert(row, on_conflict="scan_id").execute()
         supabase.table("scans").update({"status": "completed"}).eq("id", req.scan_id).execute()
 
         return {
@@ -213,6 +215,7 @@ def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
             "chronological_age_formatted": fmt(req.patient_age_months),
         }
     except Exception as e:
+        print(f"/analyze failed for scan {req.scan_id}: {type(e).__name__}: {e}", flush=True)
         supabase.table("scans").update({"status": "failed"}).eq("id", req.scan_id).execute()
         raise HTTPException(500, str(e))
 
