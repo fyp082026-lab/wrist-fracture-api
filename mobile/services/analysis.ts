@@ -89,6 +89,8 @@ const MESSAGES = {
   malformed: 'The analysis service returned an unexpected response. Please try again.',
   forbidden: "This scan doesn't belong to your account.",
   sessionExpired: 'Your session has expired. Please sign in again.',
+  serverMisconfigured:
+    'The analysis server cannot verify sign-ins right now (server configuration problem). Your scan is saved; please try again later.',
   timeout:
     'The analysis is taking longer than expected. It may still finish; check History in a minute, or try again.',
   recordFailed: 'Could not save the scan record. Please try again.',
@@ -428,6 +430,9 @@ async function interpretResponse(response: Response, scanId: string): Promise<An
   }
   if (response.status === 403) {
     throw new AnalysisServiceError('forbidden', MESSAGES.forbidden);
+  }
+  if (response.status === 503) {
+    throw new AnalysisServiceError('server_unreachable', MESSAGES.serverMisconfigured);
   }
   if (!response.ok) {
     // 500 and anything unexpected. Server error text is never shown to the user.

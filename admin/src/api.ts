@@ -73,6 +73,8 @@ export interface Health {
   device: string;
   bone_age_model: boolean;
   bone_age_error: string | null;
+  supabase?: 'ok' | 'error';
+  supabase_error?: string | null;
 }
 
 export class ApiError extends Error {

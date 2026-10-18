@@ -9,6 +9,7 @@ from fastapi import FastAPI, Header, HTTPException, Depends
 from pydantic import BaseModel
 from supabase import create_client
 from ultralytics import YOLO
+from app.supabase_check import SupabaseProbe, is_api_key_error
 
 app = FastAPI(title="Wrist Fracture AI Inference")
 
@@ -118,12 +119,20 @@ class AnalyzeRequest(BaseModel):
     patient_sex: str = "M"
 
 
+supabase_probe = SupabaseProbe(supabase)
+
+
 def verify_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "Invalid auth header")
     try:
         res = supabase.auth.get_user(authorization.split(" ", 1)[1])
-    except Exception:  # malformed, bad signature, expired: always a 401, never a 500
+    except Exception as e:
+        if is_api_key_error(e):
+            # The server's own key is broken; the user's token is not the problem.
+            supabase_probe.mark_key_error()
+            raise HTTPException(503, "Server cannot verify sign-ins: Supabase service key rejected")
+        # malformed, bad signature, expired: a 401, never a 500
         raise HTTPException(401, "Invalid or expired token")
     if not res or not res.user:
         raise HTTPException(401, "Invalid or expired token")
@@ -132,11 +141,14 @@ def verify_token(authorization: str = Header(...)):
 
 @app.get("/health")
 def health():
+    supabase_error = supabase_probe.status()
     return {
-        "status": "ready",
+        "status": "ready" if supabase_error is None else "degraded",
         "device": device,
         "bone_age_model": bone_model is not None,
         "bone_age_error": bone_error,
+        "supabase": "ok" if supabase_error is None else "error",
+        "supabase_error": supabase_error,
     }
 
 

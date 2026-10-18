@@ -8,7 +8,7 @@ import { ScanRow } from '@/components/ScanRow';
 import { useAuth } from '@/context/AuthContext';
 import { useScans } from '@/hooks/useScans';
 import { summarize } from '@/services/records';
-import { fetchServerHealth } from '@/services/devLogger';
+import { checkServer, type ServerState } from '@/services/serverStatus';
 
 function greeting() {
   const h = new Date().getHours();
@@ -19,11 +19,12 @@ export default function Home() {
   const router = useRouter();
   const { profile, session } = useAuth();
   const { items, error, refreshing, refresh } = useScans(50);
-  const [server, setServer] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [server, setServer] = useState<ServerState | 'checking'>('checking');
 
   useEffect(() => {
-    fetchServerHealth().then((h) => setServer(h.ok ? 'online' : 'offline'));
+    checkServer().then((h) => setServer(h.state));
   }, [refreshing]);
+  const bad = server === 'offline' || server === 'degraded';
 
   const name = profile?.full_name || session?.user.user_metadata?.full_name || 'Clinician';
   const stats = items ? summarize(items) : null;
@@ -34,14 +35,14 @@ export default function Home() {
         title={`${greeting()},`}
         subtitle={name}
         right={
-          <View style={[styles.server, server === 'offline' && { borderColor: COLORS.status.fracture.border }]} accessibilityLabel={`Analysis server ${server}`}>
+          <View style={[styles.server, bad && { borderColor: COLORS.status.fracture.border }]} accessibilityLabel={`Analysis server ${server}`}>
             <Ionicons
-              name={server === 'online' ? 'cloud-done-outline' : server === 'offline' ? 'cloud-offline-outline' : 'cloud-outline'}
+              name={server === 'online' ? 'cloud-done-outline' : bad ? 'cloud-offline-outline' : 'cloud-outline'}
               size={14}
-              color={server === 'offline' ? COLORS.status.fracture.text : COLORS.primaryBright}
+              color={bad ? COLORS.status.fracture.text : COLORS.primaryBright}
             />
-            <Text style={[styles.serverText, server === 'offline' && { color: COLORS.status.fracture.text }]}>
-              {server === 'online' ? 'Server online' : server === 'offline' ? 'Server offline' : 'Checking'}
+            <Text style={[styles.serverText, bad && { color: COLORS.status.fracture.text }]}>
+              {server === 'online' ? 'Server online' : server === 'offline' ? 'Server offline' : server === 'degraded' ? 'Server issue' : 'Checking'}
             </Text>
           </View>
         }

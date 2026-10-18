@@ -10,7 +10,8 @@ const REFRESH_MS = 30_000;
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [adminState, setAdminState] = useState<'checking' | 'ok' | 'denied'>('checking');
+  const [adminState, setAdminState] = useState<'checking' | 'ok' | 'denied' | 'expired' | 'server'>('checking');
+  const [serverDetail, setServerDetail] = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -26,8 +27,12 @@ export function App() {
       () => setAdminState('ok'),
       async (e) => {
         if (e instanceof ApiError && (e.status === 403 || e.status === 401)) {
-          setAdminState('denied');
+          setAdminState(e.status === 403 ? 'denied' : 'expired');
           await supabase.auth.signOut();
+        } else if (e instanceof ApiError && e.status === 503) {
+          // The server cannot check sign-ins at all (its Supabase key is broken).
+          setServerDetail(e.message);
+          setAdminState('server');
         } else {
           setAdminState('ok'); // server unreachable: let pages show their own errors
         }
@@ -36,12 +41,29 @@ export function App() {
   }, [session?.user.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (session === undefined) return <div className="center" style={{ minHeight: '100vh' }}><div className="spinner" /></div>;
-  if (!session) return <Login denied={adminState === 'denied'} />;
+  if (!session) return <Login denied={adminState === 'denied'} expired={adminState === 'expired'} />;
+  if (adminState === 'server') {
+    return (
+      <div className="login-wrap">
+        <div className="card login-card">
+          <h1>Server cannot verify sign-ins</h1>
+          <div className="banner banner-error" role="alert">{serverDetail}</div>
+          <p>
+            The analysis server reached Supabase but its service key was rejected, so neither this console nor the
+            mobile app can be used until the key is updated. Set <code>SUPABASE_SERVICE_ROLE_KEY</code> in
+            <code> ~/app/.env</code> on the EC2 server to the current secret key from Supabase (Project Settings → API
+            Keys), then restart the container.
+          </p>
+          <button className="btn" onClick={() => supabase.auth.signOut()}>Sign out</button>
+        </div>
+      </div>
+    );
+  }
   if (adminState === 'checking') return <div className="center" style={{ minHeight: '100vh' }}><div className="spinner" /></div>;
   return <Dashboard email={session.user.email ?? ''} />;
 }
 
-function Login({ denied }: { denied: boolean }) {
+function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -74,6 +96,7 @@ function Login({ denied }: { denied: boolean }) {
         <h1>Administrator sign in</h1>
         <p>Monitor clinicians, scans and analysis health.</p>
         {denied && <div className="banner banner-error">This account is not an administrator. Clinicians use the mobile app.</div>}
+        {expired && <div className="banner banner-info">Your sign-in expired. Please sign in again.</div>}
         {error && <div className="banner banner-error" role="alert">{error}</div>}
         <div className="field">
           <label htmlFor="email">Email</label>
@@ -145,6 +168,8 @@ function Dashboard({ email }: { email: string }) {
           <div>
             {health === undefined ? (
               <span className="pill pill-neutral">Checking server…</span>
+            ) : health && health.status === 'degraded' ? (
+              <span className="pill pill-warn" title={health.supabase_error ?? ''}><span aria-hidden>!</span>Server degraded</span>
             ) : health ? (
               <span className="pill pill-good" title={`device ${health.device}`}><span aria-hidden>●</span>Server online</span>
             ) : (
