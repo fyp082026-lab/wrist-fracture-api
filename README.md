@@ -25,12 +25,25 @@ Admin browser ──► /admin/ (static site) ──► /admin/api/* (Bearer tok
 3. The server checks the token and ownership, runs both models, writes `analysis_results`, and sets `scans.status` to `completed` (or `failed`).
 4. The app shows the result; the admin site sees it on its next refresh (every 30 s).
 
+## Database setup
+
+Run [`db/schema.sql`](db/schema.sql) once in Supabase (SQL Editor → New query → Run). It is safe on an
+existing project and can be re-run: it creates missing tables and columns, the sign-up trigger, Row Level
+Security policies and the private `wrist-xrays` bucket, and never deletes data.
+
 ## Admin access
 
-Only emails in `ADMIN_EMAILS` can use the admin site and `/admin/api/*`. The default is set in
-`docker-compose.yml` (`fyp082026@gmail.com`). To change it without editing the repo, add
-`ADMIN_EMAILS=a@x.org,b@y.org` to `~/app/.env` on the server; that value wins.
-An admin signs in with a normal Supabase account (create it in the app or the Supabase dashboard).
+Admins and clinicians are stored separately:
+
+- **Clinicians** sign up in the mobile app and get a row in `public.profiles`.
+- **Admins** are listed in `public.admin_allowlist`; when such an email signs up it gets a row in
+  `public.admins` instead of a clinician profile. `fyp082026@gmail.com` is seeded by `db/schema.sql`.
+  To add an admin: `insert into public.admin_allowlist (email) values ('new@admin.org');` then have them
+  sign up (or re-run the schema script if the account already exists).
+
+The API accepts an account as admin if it is in `public.admins` **or** in `ADMIN_EMAILS`
+(`docker-compose.yml`, default `fyp082026@gmail.com`; override in `~/app/.env`).
+An admin's password is their normal Supabase account password.
 
 ## CI/CD
 

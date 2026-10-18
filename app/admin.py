@@ -46,11 +46,20 @@ def _parse(value):
 def build_admin_router(supabase, verify_token):
     router = APIRouter(prefix="/admin/api", tags=["admin"])
 
+    def admin_user_ids():
+        """User ids in public.admins (db/schema.sql). Empty if the table is missing."""
+        try:
+            return {r["user_id"] for r in _rows(supabase.table("admins").select("user_id").execute())}
+        except Exception:
+            return set()
+
     def require_admin(user=Depends(verify_token)):
         email = (getattr(user, "email", None) or "").lower()
-        if not email or email not in admin_emails():
-            raise HTTPException(403, "This account is not an administrator")
-        return user
+        if email and email in admin_emails():
+            return user
+        if user.id in admin_user_ids():
+            return user
+        raise HTTPException(403, "This account is not an administrator")
 
     def list_auth_users():
         users, page = [], 1
@@ -128,6 +137,7 @@ def build_admin_router(supabase, verify_token):
     @router.get("/users")
     def users(_=Depends(require_admin)):
         auth_users = list_auth_users()
+        db_admins = admin_user_ids()
         profiles = {
             p["id"]: p
             for p in _rows(supabase.table("profiles").select("id, full_name, hospital").limit(MAX_ROWS).execute())
@@ -151,7 +161,7 @@ def build_admin_router(supabase, verify_token):
                 "created_at": _iso(getattr(u, "created_at", None)),
                 "last_sign_in_at": _iso(getattr(u, "last_sign_in_at", None)),
                 "email_confirmed": bool(getattr(u, "email_confirmed_at", None)),
-                "is_admin": (u.email or "").lower() in admin_emails(),
+                "is_admin": u.id in db_admins or (u.email or "").lower() in admin_emails(),
                 "scan_count": count.get(u.id, 0),
                 "last_scan_at": last_scan.get(u.id),
             })

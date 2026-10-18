@@ -156,3 +156,18 @@ def test_site_is_served_and_api_still_wins(tmp_path, monkeypatch):
     assert "admin" in c.get("/admin/").text
     assert c.get("/admin/api/me", headers=ADMIN_H).json()["is_admin"] is True
     assert c.get("/admin/api/me").status_code == 422
+
+
+def test_admin_from_database_table_is_allowed(monkeypatch):
+    monkeypatch.setenv("ADMIN_EMAILS", "")
+    TABLES["admins"] = [{"user_id": ADMIN}]
+    try:
+        app = FastAPI()
+        app.include_router(build_admin_router(FakeSupabase(), verify_token))
+        c = TestClient(app)
+        assert c.get("/admin/api/me", headers=ADMIN_H).status_code == 200
+        assert c.get("/admin/api/me", headers={"Authorization": "Bearer user-token"}).status_code == 403
+        users = {u["id"]: u for u in c.get("/admin/api/users", headers=ADMIN_H).json()["users"]}
+        assert users[ADMIN]["is_admin"] is True and users[U1]["is_admin"] is False
+    finally:
+        del TABLES["admins"]
