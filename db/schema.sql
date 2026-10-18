@@ -40,10 +40,12 @@ create table if not exists public.admins (
   created_at timestamptz not null default now()
 );
 
--- The administrator for this project. Add more rows to add more admins.
+-- Initial administrator, inserted only when the list is empty (a fresh
+-- project). After that, manage admins only in Table Editor -> admin_allowlist;
+-- re-running this script never re-adds an email you removed.
 insert into public.admin_allowlist (email, note)
-values ('fyp082026@gmail.com', 'Project administrator')
-on conflict (email) do nothing;
+select 'fyp082026@gmail.com', 'Initial administrator'
+ where not exists (select 1 from public.admin_allowlist);
 
 -- True when the signed-in user is an admin. SECURITY DEFINER so it works
 -- inside RLS policies without exposing the admins table.
@@ -114,6 +116,37 @@ select u.id, lower(u.email), u.raw_user_meta_data ->> 'full_name'
   from auth.users u
   join public.admin_allowlist a on lower(a.email) = lower(u.email)
 on conflict (user_id) do nothing;
+
+-- admin_allowlist is the single control for admins: adding an email makes that
+-- account an admin at once, removing it revokes access at once.
+create or replace function public.sync_admin_allowlist()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op in ('DELETE', 'UPDATE') then
+    delete from public.admins where lower(email) = lower(old.email);
+  end if;
+  if tg_op in ('INSERT', 'UPDATE') then
+    insert into public.admins (user_id, email, full_name)
+    select u.id, lower(u.email), u.raw_user_meta_data ->> 'full_name'
+      from auth.users u
+     where lower(u.email) = lower(new.email)
+    on conflict (user_id) do nothing;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists admin_allowlist_sync on public.admin_allowlist;
+create trigger admin_allowlist_sync
+  after insert or update or delete on public.admin_allowlist
+  for each row execute function public.sync_admin_allowlist();
+
+delete from public.admins a
+ where not exists (select 1 from public.admin_allowlist l where lower(l.email) = lower(a.email));
 
 -- Existing clinicians without a profile row get one.
 insert into public.profiles (id, full_name, hospital)

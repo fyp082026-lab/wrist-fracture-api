@@ -15,7 +15,7 @@ Clinician phone ──(Supabase email/password)──► Supabase Auth
       │  upload X-ray to wrist-xrays/<user>/<scan>.jpg, insert patients/scans (RLS)
       └──POST /analyze (Bearer token)──► FastAPI on EC2 ──(service role)──► Supabase
                                               │ writes analysis_results, scans.status
-Admin browser ──► /admin/ (static site) ──► /admin/api/* (Bearer token, ADMIN_EMAILS only)
+Admin browser ──► /admin/ (static site) ──► /admin/api/* (Bearer token, admins only)
 ```
 
 ## How a scan flows
@@ -33,17 +33,16 @@ Security policies and the private `wrist-xrays` bucket, and never deletes data.
 
 ## Admin access
 
-Admins and clinicians are stored separately:
+Admins and clinicians are stored separately, and admins are managed **only in Supabase**:
 
 - **Clinicians** sign up in the mobile app and get a row in `public.profiles`.
-- **Admins** are listed in `public.admin_allowlist`; when such an email signs up it gets a row in
-  `public.admins` instead of a clinician profile. `fyp082026@gmail.com` is seeded by `db/schema.sql`.
-  To add an admin: `insert into public.admin_allowlist (email) values ('new@admin.org');` then have them
-  sign up (or re-run the schema script if the account already exists).
+- **Admins** are controlled by the `public.admin_allowlist` table (Supabase → Table Editor):
+  - **Add a row** with an email → that account is an admin immediately (or as soon as it signs up).
+  - **Delete the row** → admin access is removed immediately.
+  - Admin accounts get a row in `public.admins` and no clinician profile.
 
-The API accepts an account as admin if it is in `public.admins` **or** in `ADMIN_EMAILS`
-(`docker-compose.yml`, default `fyp082026@gmail.com`; override in `~/app/.env`).
-An admin's password is their normal Supabase account password.
+An admin signs in to the website with their normal Supabase account password.
+`ADMIN_EMAILS` in `~/app/.env` is an optional emergency override and is empty by default.
 
 ## CI/CD
 

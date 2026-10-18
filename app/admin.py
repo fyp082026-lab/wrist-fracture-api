@@ -1,7 +1,8 @@
 """Admin monitoring API, used by the admin website served at /admin.
 
-Every route requires a Supabase access token whose email is listed in the
-ADMIN_EMAILS environment variable (comma separated). The service-role client
+Every route requires a Supabase access token of an admin: a user in
+public.admins (managed through public.admin_allowlist in Supabase), or an
+email in the optional ADMIN_EMAILS override. The service-role client
 bypasses RLS, so these routes read across all users; they never write.
 """
 import os
