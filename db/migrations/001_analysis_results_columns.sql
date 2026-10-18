@@ -19,8 +19,25 @@ update public.analysis_results
  where confidence is null and fracture_confidence is not null;
 
 -- 2. One result per scan: the API saves with upsert ... on conflict (scan_id).
-create unique index if not exists analysis_results_scan_id_key
-  on public.analysis_results (scan_id);
+--    Skipped (with a notice, not an error) if a unique index on scan_id
+--    already exists or if some scan already has duplicate result rows.
+do $$
+begin
+  if exists (
+    select 1 from pg_index i
+      join pg_attribute a on a.attrelid = i.indrelid and a.attnum = any (i.indkey)
+     where i.indrelid = 'public.analysis_results'::regclass
+       and i.indisunique and i.indnatts = 1 and a.attname = 'scan_id'
+  ) then
+    raise notice 'analysis_results.scan_id is already unique; skipping';
+  elsif exists (
+    select scan_id from public.analysis_results group by scan_id having count(*) > 1
+  ) then
+    raise notice 'Duplicate scan_id rows exist; unique index NOT created. Remove duplicates and run again.';
+  else
+    create unique index analysis_results_scan_id_key on public.analysis_results (scan_id);
+  end if;
+end $$;
 
 -- 3. Clinicians can read results for their own scans (the app's History and
 --    result screens). The API writes with the service key, which bypasses RLS.
