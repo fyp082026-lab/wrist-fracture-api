@@ -12,11 +12,23 @@ export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [adminState, setAdminState] = useState<'checking' | 'ok' | 'denied' | 'expired' | 'server'>('checking');
   const [serverDetail, setServerDetail] = useState('');
+  // Opened from a password-reset email: ask for a new password before anything else.
+  const [recovery, setRecovery] = useState(
+    () => new URLSearchParams(location.search).has('reset') || location.hash.includes('type=recovery')
+  );
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
+      setSession(s);
+    });
     return () => data.subscription.unsubscribe();
+  }, []);
+
+  const finishRecovery = useCallback(() => {
+    setRecovery(false);
+    history.replaceState(null, '', '/admin/');
   }, []);
 
   // Every signed-in account is checked against the server's admin list.
@@ -41,6 +53,7 @@ export function App() {
   }, [session?.user.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (session === undefined) return <div className="center" style={{ minHeight: '100vh' }}><div className="spinner" /></div>;
+  if (recovery) return <SetNewPassword session={session} onDone={finishRecovery} />;
   if (!session) return <Login denied={adminState === 'denied'} expired={adminState === 'expired'} />;
   if (adminState === 'server') {
     return (
@@ -63,11 +76,100 @@ export function App() {
   return <Dashboard email={session.user.email ?? ''} />;
 }
 
+function SetNewPassword({ session, onDone }: { session: Session | null; onDone: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!session) {
+    return (
+      <div className="login-wrap">
+        <div className="card login-card">
+          <h1>Reset link not valid</h1>
+          <div className="banner banner-error">This password-reset link has expired or was already used.</div>
+          <button className="btn btn-primary" style={{ width: '100%' }} onClick={onDone}>Back to sign in</button>
+        </div>
+      </div>
+    );
+  }
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (password.length < 8) return setError('Use at least 8 characters.');
+    if (password !== confirm) return setError('The two passwords do not match.');
+    setBusy(true);
+    setError(null);
+    const { error: err } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (err) setError(err.message);
+    else onDone();
+  };
+
+  return (
+    <div className="login-wrap">
+      <form className="card login-card" onSubmit={submit}>
+        <h1>Choose a new password</h1>
+        <p>{session.user.email}</p>
+        {error && <div className="banner banner-error" role="alert">{error}</div>}
+        <div className="field">
+          <label htmlFor="new-password">New password</label>
+          <input id="new-password" className="input" type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="confirm-password">Confirm new password</label>
+          <input id="confirm-password" className="input" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </div>
+        <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>
+          {busy ? 'Saving…' : 'Save password and continue'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
+  const [mode, setMode] = useState<'signin' | 'forgot'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+
+  const sendReset = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: `${location.origin}/admin/?reset=1`,
+    });
+    setBusy(false);
+    if (err) setError(/rate limit|too many/i.test(err.message) ? 'Too many requests. Wait a minute and try again.' : err.message);
+    else setSent(true);
+  };
+
+  if (mode === 'forgot') {
+    return (
+      <div className="login-wrap">
+        <form className="card login-card" onSubmit={sendReset}>
+          <h1>Reset your password</h1>
+          <p>We will email you a link to choose a new password.</p>
+          {sent && <div className="banner banner-info">If an account exists for that email, a reset link is on its way. Open it in this browser.</div>}
+          {error && <div className="banner banner-error" role="alert">{error}</div>}
+          <div className="field">
+            <label htmlFor="reset-email">Email</label>
+            <input id="reset-email" className="input" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <button className="btn btn-primary" style={{ width: '100%', marginBottom: 10 }} disabled={busy}>
+            {busy ? 'Sending…' : sent ? 'Send again' : 'Send reset link'}
+          </button>
+          <button type="button" className="btn" style={{ width: '100%' }} onClick={() => { setMode('signin'); setSent(false); setError(null); }}>
+            Back to sign in
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -105,6 +207,9 @@ function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
         <div className="field">
           <label htmlFor="password">Password</label>
           <input id="password" className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+        </div>
+        <div style={{ textAlign: 'right', marginTop: -6, marginBottom: 14 }}>
+          <button type="button" className="linkish" onClick={() => { setMode('forgot'); setError(null); }}>Forgot password?</button>
         </div>
         <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
