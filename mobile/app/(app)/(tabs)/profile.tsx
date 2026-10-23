@@ -11,22 +11,22 @@ import { config } from '@/services/config';
 export default function Profile() {
   const { profile } = useAuth();
   const [banner, setBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
-  return <ProfileView key={`${profile?.full_name ?? ''}|${profile?.hospital ?? ''}`} banner={banner} setBanner={setBanner} />;
+  return <ProfileView key={`${profile?.full_name ?? ''}|${profile?.organisation ?? ''}`} banner={banner} setBanner={setBanner} />;
 }
 
 function ProfileView({ banner, setBanner }: { banner: { kind: 'success' | 'error'; text: string } | null; setBanner: (b: { kind: 'success' | 'error'; text: string } | null) => void }) {
   const { session, profile, updateProfile, sendPasswordReset, signOut } = useAuth();
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
-  const [hospital, setHospital] = useState(profile?.hospital ?? '');
+  const [organisation, setOrganisation] = useState(profile?.organisation ?? '');
   const [saving, setSaving] = useState(false);
 
 
   const email = session?.user.email ?? '';
-  const dirty = fullName !== (profile?.full_name ?? '') || hospital !== (profile?.hospital ?? '');
+  const dirty = fullName !== (profile?.full_name ?? '') || organisation !== (profile?.organisation ?? '');
 
   const save = async () => {
     setSaving(true);
-    const res = await updateProfile({ full_name: fullName, hospital });
+    const res = await updateProfile({ full_name: fullName, organisation });
     setSaving(false);
     setBanner(res.ok ? { kind: 'success', text: 'Profile saved.' } : { kind: 'error', text: res.error });
   };
@@ -61,9 +61,9 @@ function ProfileView({ banner, setBanner }: { banner: { kind: 'success' | 'error
       {banner ? <Banner kind={banner.kind} message={banner.text} onDismiss={() => setBanner(null)} /> : null}
 
       <Card style={{ marginBottom: SPACING.base }}>
-        <Text style={[ui.h2, { marginBottom: SPACING.md }]}>Clinician details</Text>
+        <Text style={[ui.h2, { marginBottom: SPACING.md }]}>Your details</Text>
         <TextField label="Full name" value={fullName} onChangeText={setFullName} autoComplete="name" />
-        <TextField label="Hospital or clinic" value={hospital} onChangeText={setHospital} />
+        <TextField label="Organisation (optional)" value={organisation} onChangeText={setOrganisation} />
         <Button title="Save changes" onPress={save} loading={saving} disabled={!dirty} />
       </Card>
 
@@ -75,12 +75,12 @@ function ProfileView({ banner, setBanner }: { banner: { kind: 'success' | 'error
       <Card style={{ marginBottom: SPACING.lg }}>
         <Text style={[ui.h2, { marginBottom: SPACING.sm }]}>About</Text>
         <Row label="App version" value={Constants.expoConfig?.version ?? '2.0.0'} />
-        <Row label="Analysis server" value={config.analysisApiBaseUrl.replace(/^https?:\/\//, '') || 'Not configured'} />
+        <Row label="API server" value={config.analysisApiBaseUrl.replace(/^https?:\/\//, '') || 'Not configured'} />
       </Card>
 
       <Button title="Sign out" variant="danger" icon="log-out-outline" onPress={confirmSignOut} />
       <Text style={[ui.disclaimer, { marginTop: SPACING.xl }]}>
-        AI-assisted finding. Decision support only, not a diagnosis.
+        PediaFracture AI · user account
       </Text>
     </Screen>
   );

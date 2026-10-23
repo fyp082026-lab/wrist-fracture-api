@@ -21,7 +21,7 @@ export function AuthShell({ title, subtitle, children, footer }: { title: string
       <View style={[ui.card, styles.form]}>{children}</View>
       {footer ? <View style={styles.footer}>{footer}</View> : null}
       <Text style={[ui.disclaimer, { marginTop: SPACING.xl }]}>
-        AI-assisted finding. Decision support only, not a diagnosis.
+        Users sign in here · Administrators use the admin website
       </Text>
     </Screen>
   );

@@ -16,7 +16,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONTS, LAYOUT, RADIUS, SPACING, TABULAR_NUMBERS } from '@/constants/theme';
-import { type ScanStatus, deriveFindingStatus } from '@/services/contract';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -218,16 +217,11 @@ export function EmptyState({ icon, title, body, action }: { icon: IconName; titl
   );
 }
 
-// ─── Status & finding chips (icon + text, never colour alone) ───────────────
+// ─── Chips (icon + text, never colour alone) ──────────────────────────────
 
-const STATUS: Record<ScanStatus, { label: string; icon: IconName; tone: keyof typeof COLORS.status | 'neutral' }> = {
-  completed: { label: 'Completed', icon: 'checkmark-circle', tone: 'intact' },
-  analyzing: { label: 'Analyzing', icon: 'sync', tone: 'info' },
-  uploaded: { label: 'Uploaded', icon: 'cloud-upload-outline', tone: 'neutral' },
-  failed: { label: 'Failed', icon: 'close-circle', tone: 'fracture' },
-};
+type Tone = keyof typeof COLORS.status | 'neutral';
 
-function Chip({ label, icon, tone }: { label: string; icon: IconName; tone: keyof typeof COLORS.status | 'neutral' }) {
+export function Chip({ label, icon, tone }: { label: string; icon: IconName; tone: Tone }) {
   const c = tone === 'neutral'
     ? { text: COLORS.textSecondary, bg: COLORS.surfaceHigh, border: COLORS.surfaceBorderHigh }
     : COLORS.status[tone];
@@ -237,17 +231,6 @@ function Chip({ label, icon, tone }: { label: string; icon: IconName; tone: keyo
       <Text style={[styles.chipText, { color: c.text }]}>{label}</Text>
     </View>
   );
-}
-
-export function StatusChip({ status }: { status: ScanStatus }) {
-  return <Chip {...(STATUS[status] ?? STATUS.uploaded)} />;
-}
-
-export function FindingChip({ fracture, confidence }: { fracture: boolean; confidence: number | null }) {
-  const s = deriveFindingStatus(fracture, confidence);
-  if (s === 'no_fracture') return <Chip label="No fracture suggested" icon="shield-checkmark" tone="intact" />;
-  if (s === 'low_confidence') return <Chip label="Lower confidence, review carefully" icon="warning" tone="lowConfidence" />;
-  return <Chip label="Fracture suggested" icon="alert-circle" tone="fracture" />;
 }
 
 export const styles = StyleSheet.create({

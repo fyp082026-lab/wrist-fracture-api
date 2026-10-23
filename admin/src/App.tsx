@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { api, ApiError, supabase, type AdminUser, type Health, type ScanStatus } from './api';
+import { api, ApiError, supabase, type Health } from './api';
 import { Overview } from './pages/Overview';
 import { Users } from './pages/Users';
-import { Scans, type ScanFilter } from './pages/Scans';
 
-type Page = 'overview' | 'users' | 'scans';
+type Page = 'overview' | 'users';
 const REFRESH_MS = 30_000;
 
 export function App() {
@@ -196,8 +195,8 @@ function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
           <div>PediaFracture AI<small>Admin console</small></div>
         </div>
         <h1>Administrator sign in</h1>
-        <p>Monitor clinicians, scans and analysis health.</p>
-        {denied && <div className="banner banner-error">This account is not an administrator. Clinicians use the mobile app.</div>}
+        <p>For administrators only. Users sign in with the mobile app.</p>
+        {denied && <div className="banner banner-error">This account has the User role, not Admin. Users sign in with the mobile app.</div>}
         {expired && <div className="banner banner-info">Your sign-in expired. Please sign in again.</div>}
         {error && <div className="banner banner-error" role="alert">{error}</div>}
         <div className="field">
@@ -220,11 +219,10 @@ function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
 }
 
 function Dashboard({ email }: { email: string }) {
-  const [page, setPage] = useState<Page>(() => (location.hash.slice(1) as Page) || 'overview');
+  const [page, setPage] = useState<Page>(() => (location.hash.slice(1) === 'users' ? 'users' : 'overview'));
   const [tick, setTick] = useState(0);
   const [updatedAt, setUpdatedAt] = useState(() => new Date());
   const [health, setHealth] = useState<Health | null | undefined>(undefined);
-  const [scanFilter, setScanFilter] = useState<ScanFilter>({});
 
   const refresh = useCallback(() => {
     setTick((t) => t + 1);
@@ -242,19 +240,10 @@ function Dashboard({ email }: { email: string }) {
     location.hash = page;
   }, [page]);
 
-  const openScans = (status?: ScanStatus) => {
-    setScanFilter({ status });
-    setPage('scans');
-  };
-  const openUserScans = (u: AdminUser) => {
-    setScanFilter({ userId: u.id, userLabel: u.full_name || u.email || 'Clinician' });
-    setPage('scans');
-  };
 
   const titles: Record<Page, [string, string]> = {
-    overview: ['Overview', 'Live activity from the mobile app'],
-    users: ['Clinicians', 'Everyone registered through the mobile app'],
-    scans: ['Scans', 'Every X-ray analysed through the server'],
+    overview: ['Overview', 'Accounts and roles at a glance'],
+    users: ['Users', 'Every account, with its role and email status'],
   };
 
   return (
@@ -264,8 +253,8 @@ function Dashboard({ email }: { email: string }) {
           <div className="brand-mark">+</div>
           <div>PediaFracture<small>Admin console</small></div>
         </div>
-        {(['overview', 'users', 'scans'] as Page[]).map((p) => (
-          <button key={p} className="nav-btn" aria-current={page === p ? 'page' : undefined} onClick={() => { if (p === 'scans') setScanFilter({}); setPage(p); }}>
+        {(['overview', 'users'] as Page[]).map((p) => (
+          <button key={p} className="nav-btn" aria-current={page === p ? 'page' : undefined} onClick={() => setPage(p)}>
             {titles[p][0]}
           </button>
         ))}
@@ -276,12 +265,12 @@ function Dashboard({ email }: { email: string }) {
             ) : health && health.status === 'degraded' ? (
               <span className="pill pill-warn" title={health.supabase_error ?? ''}><span aria-hidden>!</span>Server degraded</span>
             ) : health ? (
-              <span className="pill pill-good" title={`device ${health.device}`}><span aria-hidden>●</span>Server online</span>
+              <span className="pill pill-good"><span aria-hidden>●</span>Server online</span>
             ) : (
               <span className="pill pill-bad"><span aria-hidden>✕</span>Server offline</span>
             )}
           </div>
-          {health && !health.bone_age_model && <span className="pill pill-warn"><span aria-hidden>!</span>Bone age model off</span>}
+          <div><span className="pill pill-good"><span aria-hidden>★</span>Admin</span></div>
           <div style={{ wordBreak: 'break-all' }}>{email}</div>
           <button className="btn" onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
@@ -297,9 +286,8 @@ function Dashboard({ email }: { email: string }) {
             <button className="btn" onClick={refresh}>Refresh</button>
           </div>
         </div>
-        {page === 'overview' && <Overview tick={tick} onOpenScans={openScans} />}
-        {page === 'users' && <Users tick={tick} onOpenUserScans={openUserScans} />}
-        {page === 'scans' && <Scans tick={tick} filter={scanFilter} onFilter={setScanFilter} />}
+        {page === 'overview' && <Overview tick={tick} onOpenUsers={() => setPage('users')} />}
+        {page === 'users' && <Users tick={tick} />}
       </main>
     </div>
   );

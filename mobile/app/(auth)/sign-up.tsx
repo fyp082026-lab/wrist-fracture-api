@@ -11,7 +11,7 @@ export default function SignUp() {
   const router = useRouter();
   const { signUp } = useAuth();
   const [fullName, setFullName] = useState('');
-  const [hospital, setHospital] = useState('');
+  const [organisation, setOrganisation] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -24,7 +24,7 @@ export default function SignUp() {
     if (busy) return;
     setBusy(true);
     setError(null);
-    const res = await signUp({ email, password, fullName, hospital });
+    const res = await signUp({ email, password, fullName, organisation });
     setBusy(false);
     if (!res.ok) {
       setError(res.error);
@@ -39,7 +39,7 @@ export default function SignUp() {
   return (
     <AuthShell
       title="Create your account"
-      subtitle="For clinicians using AI-assisted X-ray review"
+      subtitle="Create a user account for the PediaFracture app"
       footer={
         <>
           <Text style={ui.subtitle}>Already registered?</Text>
@@ -50,8 +50,8 @@ export default function SignUp() {
       }>
       {error ? <Banner kind="error" message={error} onDismiss={() => setError(null)} /> : null}
       <TextField label="Full name" icon="person-outline" placeholder="Dr. Jane Smith" autoComplete="name" textContentType="name" value={fullName} onChangeText={setFullName} />
-      <TextField label="Hospital or clinic (optional)" icon="business-outline" placeholder="City Children's Hospital" value={hospital} onChangeText={setHospital} />
-      <TextField label="Work email" icon="mail-outline" placeholder="clinician@hospital.org" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" textContentType="emailAddress" value={email} onChangeText={setEmail} />
+      <TextField label="Organisation (optional)" icon="business-outline" placeholder="e.g. City Hospital" value={organisation} onChangeText={setOrganisation} />
+      <TextField label="Email" icon="mail-outline" placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" textContentType="emailAddress" value={email} onChangeText={setEmail} />
       <TextField
         label="Password"
         icon="lock-closed-outline"

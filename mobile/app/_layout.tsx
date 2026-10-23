@@ -19,9 +19,12 @@ const theme = {
   colors: { ...DarkTheme.colors, background: COLORS.background, card: COLORS.surfaceLow, text: COLORS.textPrimary, border: COLORS.surfaceBorder, primary: COLORS.primaryBright },
 };
 
-/** Signed out → (auth). Signed in → (app). Password-reset links go to /reset-password. */
+/**
+ * Signed out → (auth). Signed in as role 'user' → (app). Admin accounts are
+ * signed out by AuthContext. Password-reset links go to /reset-password.
+ */
 function AuthGate() {
-  const { session, initializing, recovering } = useAuth();
+  const { session, role, initializing, recovering } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -35,12 +38,14 @@ function AuthGate() {
     }
     if (top === 'reset-password' || top === 'auth') {
       // Landing routes for email links: leave once the link is handled.
-      if (session) router.replace('/');
+      if (session && role) router.replace('/');
       return;
     }
+    // Signed in but the role is still being checked: stay where we are.
+    if (session && !role) return;
     if (!session && top !== '(auth)') router.replace('/sign-in');
     else if (session && top === '(auth)') router.replace('/');
-  }, [session, initializing, recovering, segments, router]);
+  }, [session, role, initializing, recovering, segments, router]);
 
   return null;
 }

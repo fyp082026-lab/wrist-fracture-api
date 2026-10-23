@@ -196,3 +196,7 @@ tr.clickable:hover td { background: var(--surface); }
   .kv { grid-template-columns: 120px 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
+.rules { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; color: var(--text-2); }
+.rules li { display: grid; grid-template-columns: 110px 1fr; gap: 10px; align-items: center; }
+.btn .muted { margin-left: 2px; }

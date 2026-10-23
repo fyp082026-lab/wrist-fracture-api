@@ -2,7 +2,9 @@
  * Authentication state for the whole app (Supabase email + password).
  *
  * - The session is persisted (Keychain / Keystore) and refreshed automatically,
- *   so clinicians stay signed in between launches.
+ *   so users stay signed in between launches.
+ * - Role-based access: administrator accounts are signed out of the app and
+ *   sent to the admin website; only role 'user' can use the app.
  * - Email confirmation and password-reset links come back as deep links; the
  *   code in them is exchanged for a session here.
  */
@@ -14,7 +16,14 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/services/supabase';
 import { isValidEmail, mapAuthError } from '@/services/authErrors';
 import { parseAuthUrl } from '@/services/authLinks';
-import { type ClinicianProfile, getProfile, saveProfile } from '@/services/records';
+import {
+  ADMIN_IN_APP_MESSAGE,
+  type Role,
+  type UserProfile,
+  getProfile,
+  getRole,
+  saveProfile,
+} from '@/services/account';
 
 const APP_SCHEME = 'pediafracture';
 
@@ -38,7 +47,9 @@ type SignInResult = Result | { ok: false; error: string; unverified: true };
 
 interface AuthState {
   session: Session | null;
-  profile: ClinicianProfile | null;
+  profile: UserProfile | null;
+  /** 'user' once the signed-in account is confirmed not to be an admin; null while checking. */
+  role: Role | null;
   /** True until the stored session has been read on launch. */
   initializing: boolean;
   /** Set while a password-reset link is being completed. */
@@ -47,13 +58,13 @@ interface AuthState {
   linkMessage: string | null;
   clearLinkMessage: () => void;
   signIn: (email: string, password: string) => Promise<SignInResult>;
-  signUp: (input: { email: string; password: string; fullName: string; hospital: string }) => Promise<
+  signUp: (input: { email: string; password: string; fullName: string; organisation: string }) => Promise<
     Result & { needsVerification?: boolean }
   >;
   resendVerification: (email: string) => Promise<Result>;
   sendPasswordReset: (email: string) => Promise<Result>;
   updatePassword: (password: string) => Promise<Result>;
-  updateProfile: (fields: { full_name: string; hospital: string }) => Promise<Result>;
+  updateProfile: (fields: { full_name: string; organisation: string }) => Promise<Result>;
   signOut: () => Promise<void>;
 }
 
@@ -61,7 +72,8 @@ const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<ClinicianProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [role, setRole] = useState<Role | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [recovering, setRecovering] = useState(false);
   const [linkMessage, setLinkMessage] = useState<string | null>(null);
@@ -77,13 +89,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // First sign-in and no database trigger: create it from sign-up metadata.
       const meta = s.user.user_metadata ?? {};
       setProfile(
-        await saveProfile({ id: s.user.id, full_name: meta.full_name ?? null, hospital: meta.hospital ?? null })
+        await saveProfile({ id: s.user.id, full_name: meta.full_name ?? null, organisation: meta.hospital ?? null })
       );
     } catch {
       // Profile problems never block using the app; Profile screen can retry.
-      setProfile((p) => p ?? { id: s.user.id, full_name: s.user.user_metadata?.full_name ?? null, hospital: null });
+      setProfile((p) => p ?? { id: s.user.id, full_name: s.user.user_metadata?.full_name ?? null, organisation: null });
     }
   }, []);
+
+  // Role-based access: only role 'user' may use the app.
+  const checkRole = useCallback(
+    async (s: Session) => {
+      const r = await getRole();
+      if (r === 'admin') {
+        setLinkMessage(ADMIN_IN_APP_MESSAGE);
+        await supabase.auth.signOut({ scope: 'local' });
+        return;
+      }
+      setRole('user');
+      loadProfile(s);
+    },
+    [loadProfile]
+  );
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event, s) => {
@@ -92,14 +119,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event === 'PASSWORD_RECOVERY') setRecovering(true);
       if (!s) {
         setProfile(null);
+        setRole(null);
         setRecovering(false);
-      } else if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+      } else if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        setRole(null);
         // Deferred: Supabase queries must not run inside this callback.
+        setTimeout(() => checkRole(s), 0);
+      } else if (event === 'USER_UPDATED') {
         setTimeout(() => loadProfile(s), 0);
       }
     });
     return () => data.subscription.unsubscribe();
-  }, [loadProfile]);
+  }, [checkRole, loadProfile]);
 
   // Email confirmation / password reset links.
   useEffect(() => {
@@ -162,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const signUp: AuthState['signUp'] = useCallback(async ({ email, password, fullName, hospital }) => {
+  const signUp: AuthState['signUp'] = useCallback(async ({ email, password, fullName, organisation }) => {
     const clean = email.trim().toLowerCase();
     if (!fullName.trim()) return { ok: false, error: 'Please enter your full name.' };
     if (!isValidEmail(clean)) return { ok: false, error: 'Please enter a valid email address.' };
@@ -172,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: clean,
         password,
         options: {
-          data: { full_name: fullName.trim(), hospital: hospital.trim() || null },
+          data: { full_name: fullName.trim(), hospital: organisation.trim() || null },
           emailRedirectTo: authRedirectUrl('auth/callback'),
         },
       });
@@ -226,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateProfile = useCallback(
-    async (fields: { full_name: string; hospital: string }): Promise<Result> => {
+    async (fields: { full_name: string; organisation: string }): Promise<Result> => {
       if (!session) return { ok: false, error: 'You are signed out.' };
       try {
         setProfile(await saveProfile({ id: session.user.id, ...fields }));
@@ -244,6 +275,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setSession(null);
       setProfile(null);
+      setRole(null);
     }
   }, []);
 
@@ -253,6 +285,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       session,
       profile,
+      role,
       initializing,
       recovering,
       linkMessage,
@@ -265,7 +298,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateProfile,
       signOut,
     }),
-    [session, profile, initializing, recovering, linkMessage, clearLinkMessage, signIn, signUp,
+    [session, profile, role, initializing, recovering, linkMessage, clearLinkMessage, signIn, signUp,
       resendVerification, sendPasswordReset, updatePassword, updateProfile, signOut]
   );
 

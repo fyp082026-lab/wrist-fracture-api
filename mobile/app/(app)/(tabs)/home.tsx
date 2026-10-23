@@ -1,107 +1,131 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONTS, RADIUS, SPACING, TABULAR_NUMBERS } from '@/constants/theme';
-import { Banner, Button, Card, EmptyState, Header, Loading, Screen, styles as ui } from '@/components/ui';
-import { ScanRow } from '@/components/ScanRow';
+import { COLORS, FONTS, RADIUS, SPACING } from '@/constants/theme';
+import { Button, Card, Chip, Header, Row, Screen, styles as ui } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
-import { useScans } from '@/hooks/useScans';
-import { summarize } from '@/services/records';
+import { verifyWithServer } from '@/services/account';
 import { checkServer, type ServerState } from '@/services/serverStatus';
+import { formatFullScanDate } from '@/services/format';
 
 function greeting() {
   const h = new Date().getHours();
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 
+type Check = 'checking' | 'ok' | 'fail';
+
 export default function Home() {
   const router = useRouter();
-  const { profile, session } = useAuth();
-  const { items, error, refreshing, refresh } = useScans(50);
+  const { profile, session, role } = useAuth();
   const [server, setServer] = useState<ServerState | 'checking'>('checking');
+  const [tokenCheck, setTokenCheck] = useState<Check>('checking');
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    checkServer().then((h) => setServer(h.state));
-  }, [refreshing]);
-  const bad = server === 'offline' || server === 'degraded';
+  const runChecks = useCallback(async () => {
+    setServer('checking');
+    setTokenCheck('checking');
+    const [health, verified] = await Promise.all([checkServer(), verifyWithServer()]);
+    setServer(health.state);
+    setTokenCheck(verified === 'verified' ? 'ok' : 'fail');
+  }, []);
 
-  const name = profile?.full_name || session?.user.user_metadata?.full_name || 'Clinician';
-  const stats = items ? summarize(items) : null;
+  useFocusEffect(
+    useCallback(() => {
+      runChecks();
+    }, [runChecks])
+  );
+
+  const refresh = async () => {
+    setRefreshing(true);
+    await runChecks();
+    setRefreshing(false);
+  };
+
+  const user = session?.user;
+  const name = profile?.full_name || user?.user_metadata?.full_name || 'User';
+  const date = (iso?: string | null) => (iso ? formatFullScanDate(Date.parse(iso)) : 'Never');
 
   return (
     <Screen onRefresh={refresh} refreshing={refreshing}>
-      <Header
-        title={`${greeting()},`}
-        subtitle={name}
-        right={
-          <View style={[styles.server, bad && { borderColor: COLORS.status.fracture.border }]} accessibilityLabel={`Analysis server ${server}`}>
-            <Ionicons
-              name={server === 'online' ? 'cloud-done-outline' : bad ? 'cloud-offline-outline' : 'cloud-outline'}
-              size={14}
-              color={bad ? COLORS.status.fracture.text : COLORS.primaryBright}
-            />
-            <Text style={[styles.serverText, bad && { color: COLORS.status.fracture.text }]}>
-              {server === 'online' ? 'Server online' : server === 'offline' ? 'Server offline' : server === 'degraded' ? 'Server issue' : 'Checking'}
-            </Text>
-          </View>
-        }
-      />
+      <Header title={`${greeting()},`} subtitle={name} />
 
       <Card style={styles.hero}>
-        <Text style={ui.h2}>New X-ray analysis</Text>
-        <Text style={[ui.body, { marginBottom: SPACING.base }]}>
-          Upload a pediatric wrist X-ray for AI-assisted fracture detection and bone age estimation.
-        </Text>
-        <Button title="Start new scan" icon="add-circle-outline" onPress={() => router.push('/scan/new')} />
+        <View style={styles.heroTop}>
+          <View style={styles.heroIcon}>
+            <Ionicons name="shield-checkmark" size={26} color={COLORS.primaryBright} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={ui.h2}>You are signed in</Text>
+            <Text style={ui.subtitle}>Your session is stored securely on this device.</Text>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', gap: SPACING.sm, flexWrap: 'wrap' }}>
+          <Chip label={role === 'user' ? 'Role: User' : 'Role: checking'} icon="person" tone="info" />
+          {user?.email_confirmed_at ? (
+            <Chip label="Email verified" icon="checkmark-circle" tone="intact" />
+          ) : (
+            <Chip label="Email not verified" icon="alert-circle" tone="lowConfidence" />
+          )}
+        </View>
       </Card>
 
-      {error ? <Banner kind="error" message={error} /> : null}
+      <Text style={[ui.h2, styles.section]}>Account</Text>
+      <Card style={{ marginBottom: SPACING.lg }}>
+        <Row label="Name" value={profile?.full_name || 'Not set'} />
+        <Row label="Email" value={user?.email ?? ''} />
+        <Row label="Organisation" value={profile?.organisation || 'Not set'} />
+        <Row label="Member since" value={date(user?.created_at)} />
+        <Row label="Last sign-in" value={date(user?.last_sign_in_at)} />
+      </Card>
 
-      {stats ? (
-        <View style={styles.stats}>
-          <Stat label="Scans" value={stats.total} icon="layers-outline" />
-          <Stat label="Fractures suggested" value={stats.fractures} icon="alert-circle-outline" />
-          <Stat label="In progress" value={stats.pending} icon="sync-outline" />
-        </View>
-      ) : null}
+      <Text style={[ui.h2, styles.section]}>Connection</Text>
+      <Card style={{ marginBottom: SPACING.lg }}>
+        <StatusLine label="Supabase sign-in" state={session ? 'ok' : 'fail'} okText="Active session" failText="No session" />
+        <StatusLine
+          label="API server"
+          state={server === 'checking' ? 'checking' : server === 'online' ? 'ok' : 'fail'}
+          okText="Online"
+          failText={server === 'degraded' ? 'Server issue' : 'Offline'}
+        />
+        <StatusLine
+          label="Server verified your sign-in"
+          state={tokenCheck}
+          okText="Verified"
+          failText="Not verified"
+        />
+      </Card>
 
-      <View style={styles.sectionHead}>
-        <Text style={ui.h2}>Recent scans</Text>
-        {items && items.length > 0 ? (
-          <Text style={ui.link} onPress={() => router.push('/history')} accessibilityRole="link">See all</Text>
-        ) : null}
-      </View>
-
-      {!items && !error ? <Loading /> : null}
-      {items && items.length === 0 ? (
-        <EmptyState icon="scan-outline" title="No scans yet" body="Your analysed X-rays will appear here." />
-      ) : null}
-      {items?.slice(0, 5).map((s) => <ScanRow key={s.id} item={s} />)}
+      <Button title="Edit profile" variant="secondary" icon="create-outline" onPress={() => router.push('/profile')} />
     </Screen>
   );
 }
 
-function Stat({ label, value, icon }: { label: string; value: number; icon: keyof typeof Ionicons.glyphMap }) {
+function StatusLine({ label, state, okText, failText }: { label: string; state: Check; okText: string; failText: string }) {
+  const color = state === 'ok' ? COLORS.status.intact.text : state === 'fail' ? COLORS.status.fracture.text : COLORS.textSecondary;
+  const icon = state === 'ok' ? 'checkmark-circle' : state === 'fail' ? 'close-circle' : 'ellipsis-horizontal-circle';
   return (
-    <View style={styles.stat}>
-      <Ionicons name={icon} size={18} color={COLORS.primaryBright} />
-      <Text style={[styles.statValue, TABULAR_NUMBERS]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    <Row
+      label={label}
+      value={
+        <View style={styles.status}>
+          <Ionicons name={icon} size={16} color={color} />
+          <Text style={[styles.statusText, { color }]}>{state === 'checking' ? 'Checking…' : state === 'ok' ? okText : failText}</Text>
+        </View>
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  server: {
-    flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.primaryMutedBorder, backgroundColor: COLORS.surfaceLow,
+  hero: { marginBottom: SPACING.lg, borderColor: COLORS.primaryMutedBorder, gap: SPACING.md },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
+  heroIcon: {
+    width: 48, height: 48, borderRadius: RADIUS.lg, backgroundColor: COLORS.primaryMutedBg,
+    alignItems: 'center', justifyContent: 'center',
   },
-  serverText: { fontFamily: FONTS.medium, fontSize: 12, color: COLORS.primaryBright },
-  hero: { marginBottom: SPACING.base, borderColor: COLORS.primaryMutedBorder },
-  stats: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.lg },
-  stat: { flex: 1, backgroundColor: COLORS.surfaceLow, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.surfaceBorder, padding: SPACING.md, gap: 4 },
-  statValue: { fontFamily: FONTS.bold, fontSize: 22, color: COLORS.textPrimary },
-  statLabel: { fontFamily: FONTS.medium, fontSize: 11, color: COLORS.textSecondary },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
+  section: { marginBottom: SPACING.sm },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  statusText: { fontFamily: FONTS.semibold, fontSize: 14 },
 });

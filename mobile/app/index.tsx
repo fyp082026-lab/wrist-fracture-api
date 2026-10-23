@@ -3,8 +3,8 @@ import { Loading, Screen } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 
 export default function Index() {
-  const { session, initializing } = useAuth();
-  if (initializing) {
+  const { session, role, initializing } = useAuth();
+  if (initializing || (session && !role)) {
     return (
       <Screen scroll={false}>
         <Loading />

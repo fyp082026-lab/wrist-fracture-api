@@ -6,73 +6,30 @@ export const supabase = createClient(
   { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'pediafracture-admin' } }
 );
 
-export type ScanStatus = 'uploaded' | 'analyzing' | 'completed' | 'failed';
+export type Role = 'user' | 'admin';
 
 export interface Overview {
   users_total: number;
+  users_verified: number;
+  users_unverified: number;
   users_active_7d: number;
-  patients_total: number;
-  scans_total: number;
-  scans_by_status: Record<ScanStatus, number>;
-  fractures_detected: number;
-  results_total: number;
-  scans_per_day: { date: string; count: number }[];
+  admins_total: number;
+  signups_per_day: { date: string; count: number }[];
 }
 
-export interface AdminUser {
+export interface Account {
   id: string;
   email: string | null;
   full_name: string | null;
-  hospital: string | null;
+  organisation: string | null;
+  role: Role;
   created_at: string | null;
   last_sign_in_at: string | null;
   email_confirmed: boolean;
-  is_admin: boolean;
-  scan_count: number;
-  last_scan_at: string | null;
-}
-
-export interface ScanRow {
-  id: string;
-  user_id: string;
-  patient_id: string | null;
-  status: ScanStatus;
-  created_at: string;
-  user_email: string | null;
-  patient_code: string | null;
-  patient_age_months: number | null;
-  patient_sex: 'M' | 'F' | null;
-  fracture_detected: boolean | null;
-  confidence: number | null;
-  bone_age_months: number | null;
-}
-
-export interface Detection {
-  label: string;
-  confidence: number;
-  box_normalized: [number, number, number, number];
-}
-
-export interface ScanDetail {
-  scan: { id: string; user_id: string; status: ScanStatus; created_at: string; image_path: string };
-  patient: { patient_code: string | null; age_months: number | null; sex: 'M' | 'F' | null } | null;
-  result: {
-    fracture_detected: boolean;
-    confidence: number | null;
-    detections: Detection[] | null;
-    bone_age_months: number | null;
-    clinical_disclaimer: string | null;
-    created_at: string;
-  } | null;
-  user_email: string | null;
-  image_url: string | null;
 }
 
 export interface Health {
   status: string;
-  device: string;
-  bone_age_model: boolean;
-  bone_age_error: string | null;
   supabase?: 'ok' | 'error';
   supabase_error?: string | null;
 }
@@ -96,16 +53,9 @@ async function request<T>(path: string): Promise<T> {
 }
 
 export const api = {
-  me: () => request<{ email: string; is_admin: boolean }>('/admin/api/me'),
+  me: () => request<{ email: string; role: Role }>('/admin/api/me'),
   overview: () => request<Overview>('/admin/api/overview'),
-  users: () => request<{ users: AdminUser[] }>('/admin/api/users'),
-  scans: (params: { status?: string; userId?: string; limit: number; offset: number }) => {
-    const q = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
-    if (params.status) q.set('status', params.status);
-    if (params.userId) q.set('user_id', params.userId);
-    return request<{ scans: ScanRow[]; total: number }>(`/admin/api/scans?${q}`);
-  },
-  scan: (id: string) => request<ScanDetail>(`/admin/api/scans/${encodeURIComponent(id)}`),
+  users: () => request<{ users: Account[] }>('/admin/api/users'),
   health: async (): Promise<Health | null> => {
     try {
       const res = await fetch('/health');
@@ -115,12 +65,6 @@ export const api = {
     }
   },
 };
-
-export function formatMonths(months: number | null | undefined): string {
-  if (months == null) return 'Not available';
-  const m = Math.round(months);
-  return `${Math.floor(m / 12)}y ${m % 12}m`;
-}
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return 'Never';

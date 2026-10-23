@@ -31,11 +31,11 @@ export default function SignIn() {
 
   return (
     <AuthShell
-      title="Clinician sign in"
-      subtitle="AI-assisted wrist X-ray decision support"
+      title="Sign in"
+      subtitle="Sign in to your PediaFracture account"
       footer={
         <>
-          <Text style={ui.subtitle}>New clinician?</Text>
+          <Text style={ui.subtitle}>New user?</Text>
           <Link href="/sign-up" asChild>
             <Pressable hitSlop={8} accessibilityRole="link"><Text style={ui.link}>Create an account</Text></Pressable>
           </Link>
@@ -46,7 +46,7 @@ export default function SignIn() {
       <TextField
         label="Email"
         icon="mail-outline"
-        placeholder="clinician@hospital.org"
+        placeholder="you@example.com"
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}

@@ -31,7 +31,7 @@ export default function ForgotPassword() {
       <TextField
         label="Email"
         icon="mail-outline"
-        placeholder="clinician@hospital.org"
+        placeholder="you@example.com"
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}

@@ -1,84 +1,83 @@
-# PediaFracture AI
+# PediaFracture: authentication and role-based access
 
-AI-assisted pediatric wrist X-ray analysis: fracture detection (YOLOv8m) and bone age estimation (EfficientNet-B3).
+This branch (`main`) is the **authentication-only** version of PediaFracture: users sign in to a
+mobile app, administrators sign in to a website, and each role can only reach what it is allowed to.
+The full app with X-ray analysis is kept on the **`backup/full-app`** branch.
 
 | Part | Folder | Who uses it | Where it runs |
 | --- | --- | --- | --- |
-| Analysis API | `app/` | Mobile app and admin site | Docker on AWS EC2, behind nginx at `https://wristfracture.duckdns.org` |
-| Admin website | `admin/` | Administrators | Served by the API at `https://wristfracture.duckdns.org/admin/` |
-| Mobile app | `mobile/` | Clinicians | Android APK built by CI (Expo / React Native) |
+| API server | `app/` | Mobile app and admin website | Docker on AWS EC2, behind nginx at `https://wristfracture.duckdns.org` |
+| Admin website | `admin/` | Admins | `https://wristfracture.duckdns.org/admin/` |
+| Mobile app | `mobile/` | Users | Android APK built by CI (Expo / React Native) |
+| Database setup | `db/schema.sql` | - | Supabase (auth, Postgres with Row Level Security) |
 
-All three share one Supabase project (auth, Postgres with RLS, private `wrist-xrays` bucket).
+## Roles
 
-```
-Clinician phone ──(Supabase email/password)──► Supabase Auth
-      │  upload X-ray to wrist-xrays/<user>/<scan>.jpg, insert patients/scans (RLS)
-      └──POST /analyze (Bearer token)──► FastAPI on EC2 ──(service role)──► Supabase
-                                              │ writes analysis_results, scans.status
-Admin browser ──► /admin/ (static site) ──► /admin/api/* (Bearer token, admins only)
-```
+| | User | Admin |
+| --- | --- | --- |
+| Signs up / in with | Mobile app | Admin website |
+| Stored in | `public.profiles` | `public.admins` (from `public.admin_allowlist`) |
+| Mobile app | ✅ own account and profile | ❌ refused, told to use the website |
+| Admin website | ❌ refused (403) | ✅ all accounts, roles and email status |
+| Database (RLS) | reads and edits only own profile | reads every profile |
 
-## How a scan flows
+Who is an admin is decided **only** by the `admin_allowlist` table in Supabase (Table Editor):
+add an email to grant admin, delete the row to revoke it. Both take effect immediately.
 
-1. The app creates `patients` + `scans` rows (status `uploaded`) and uploads the re-encoded JPEG.
-2. It calls `POST /analyze` with the user's access token.
-3. The server checks the token and ownership, runs both models, writes `analysis_results`, and sets `scans.status` to `completed` (or `failed`).
-4. The app shows the result; the admin site sees it on its next refresh (every 30 s).
+## Authentication features
 
-## Database setup
+- Email + password sign-up with email verification (resend link from the app)
+- Sign in, persistent session (Keychain / Keystore), automatic token refresh, sign out
+- Forgot password → email link → set a new password (app and website)
+- Profile: name and organisation, editable by the user
+- The server verifies Supabase tokens (`GET /me`, admin API) and reports its own health (`GET /health`)
 
-Run [`db/schema.sql`](db/schema.sql) once in Supabase (SQL Editor → New query → Run). It is safe on an
-existing project and can be re-run: it creates missing tables and columns, the sign-up trigger, Row Level
-Security policies and the private `wrist-xrays` bucket, and never deletes data.
+## API
 
-## Admin access
+| Endpoint | Access | Returns |
+| --- | --- | --- |
+| `GET /health` | public | server and Supabase status |
+| `GET /me` | any signed-in account | the token's user id and email |
+| `GET /admin/api/me` | admin | admin confirmation (403 for users) |
+| `GET /admin/api/overview` | admin | user, verified, active and admin counts; sign-ups per day |
+| `GET /admin/api/users` | admin | every account with role and email status |
 
-Admins and clinicians are stored separately, and admins are managed **only in Supabase**:
+## Demo script (5 minutes)
 
-- **Clinicians** sign up in the mobile app and get a row in `public.profiles`.
-- **Admins** are controlled by the `public.admin_allowlist` table (Supabase → Table Editor):
-  - **Add a row** with an email → that account is an admin immediately (or as soon as it signs up).
-  - **Delete the row** → admin access is removed immediately.
-  - Admin accounts get a row in `public.admins` and no clinician profile.
+1. **Sign up** in the app as a new user → "Check your inbox" → open the email link on the phone.
+2. **Sign in** → Home shows *Role: User*, *Email verified*, and the server verifying the session.
+3. **Profile** → change name or organisation → saved.
+4. **Admin website** → sign in with the user's account → refused: *"This account has the User role, not Admin"*.
+5. **Admin website** → sign in as the admin → Overview and Users show the new account with role *User*.
+6. **Mobile app** → sign in with the admin account → refused: *administrators use the website*.
+7. **Supabase** → add the user's email to `admin_allowlist` → they can now open the admin website
+   (and are refused by the app). Delete the row → back to a normal user.
+8. **Forgot password** on either the app or the website → email link → new password.
 
-An admin signs in to the website with their normal Supabase account password.
-`ADMIN_EMAILS` in `~/app/.env` is an optional emergency override and is empty by default.
+## One-time setup
+
+1. Run [`db/schema.sql`](db/schema.sql) in Supabase (SQL Editor → New query → Run). Safe to re-run.
+2. Supabase → Authentication → URL Configuration → **Redirect URLs** must include
+   `pediafracture://**` and `https://wristfracture.duckdns.org/admin/**` (and `exp://**` for Expo Go).
+3. EC2 `~/app/.env` holds `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (never committed).
 
 ## CI/CD
 
-| Workflow | Runs on | Does |
-| --- | --- | --- |
-| `CI/CD` (`deploy.yml`) | Push to `main`, `feat/**`, `fix/**`; PRs | Python syntax + admin API tests, admin site typecheck/build, Docker build. **On `main` only:** push image to GHCR, deploy to EC2 with health check and automatic rollback, then smoke-test `/health`, `/admin/` and that `/admin/api` refuses anonymous calls. |
-| `Mobile app` (`mobile.yml`) | Changes under `mobile/` | Typecheck, lint, unit tests, server reachability, then a release APK. Download it from the run's **Artifacts**; builds from `main` are also attached to the `mobile-latest` release. |
-
-Required repository secrets (already used before): `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`. The mobile build needs none.
-
-## One-time Supabase settings
-
-Authentication → URL Configuration → **Redirect URLs** must contain:
-
-- `pediafracture://**` (installed app: email confirmation and password reset)
-- `exp://**` (only if you test with Expo Go)
-
-Without these, verification and reset emails send people to the Site URL instead of the app.
+| Workflow | Does |
+| --- | --- |
+| `CI/CD` (`deploy.yml`) | Server tests, admin website build, Docker build. On `main`: deploy to EC2 with health check, rollback and a public smoke test. |
+| `Mobile app` (`mobile.yml`) | Typecheck, lint, tests, then a release APK. Builds from `main` are published as the `mobile-latest` release: `https://github.com/fyp082026-lab/wrist-fracture-api/releases/download/mobile-latest/PediaFracture.apk` |
 
 ## Local development
 
 ```bash
-# Mobile (Expo)
-cd mobile && npm ci && npm start          # scan the QR code with Expo Go
+cd mobile && npm ci && npm start          # Expo; scan the QR code with Expo Go
 npm run check                             # typecheck + lint + tests
-
-# Admin site (proxies API calls to the live server)
-cd admin && npm ci && npm run dev         # http://localhost:5173/admin/
-
-# Server tests (no models needed)
-pip install -r requirements-dev.txt && python -m pytest tests
+cd admin && npm ci && npm run dev         # http://localhost:5173/admin/ (API proxied to the live server)
+pip install -r requirements-dev.txt -r requirements.txt && python -m pytest tests
 ```
 
 On Windows PowerShell, use `npm.cmd` / `npx.cmd` if script execution is disabled.
 
-## Configuration
-
-- `mobile/.env` and `admin/.env` hold only **public** values (Supabase URL, publishable key, API URL). They are committed so CI builds work with no setup.
-- The **service-role key** lives only in `~/app/.env` on the EC2 server (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) and is never committed.
+`mobile/.env` and `admin/.env` hold only **public** values (Supabase URL, publishable key, API URL).
+The service-role key lives only on the server.
