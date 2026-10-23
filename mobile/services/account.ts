@@ -3,7 +3,6 @@
  * query to that user; the role check uses the database's is_admin() function.
  */
 import { supabase } from '@/services/supabase';
-import { config } from '@/services/config';
 
 export type Role = 'user' | 'admin';
 
@@ -59,28 +58,6 @@ export async function getRole(): Promise<Role> {
   const { data, error } = await supabase.rpc('is_admin');
   if (error) return 'user';
   return data === true ? 'admin' : 'user';
-}
-
-/** Asks the API server to verify the current session token (GET /me). */
-export async function verifyWithServer(): Promise<'verified' | 'rejected' | 'unreachable'> {
-  if (!config.analysisApiBaseUrl) return 'unreachable';
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) return 'rejected';
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(`${config.analysisApiBaseUrl}/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: controller.signal,
-    });
-    if (res.ok) return 'verified';
-    return res.status === 401 ? 'rejected' : 'unreachable';
-  } catch {
-    return 'unreachable';
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 export const ADMIN_SITE_URL = 'https://wristfracture.duckdns.org/admin/';

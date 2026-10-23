@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { api, ApiError, supabase, type Health } from './api';
-import { Overview } from './pages/Overview';
+import { api, ApiError, supabase } from './api';
 import { Users } from './pages/Users';
 
-type Page = 'overview' | 'users';
-const REFRESH_MS = 30_000;
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -219,33 +216,6 @@ function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
 }
 
 function Dashboard({ email }: { email: string }) {
-  const [page, setPage] = useState<Page>(() => (location.hash.slice(1) === 'users' ? 'users' : 'overview'));
-  const [tick, setTick] = useState(0);
-  const [updatedAt, setUpdatedAt] = useState(() => new Date());
-  const [health, setHealth] = useState<Health | null | undefined>(undefined);
-
-  const refresh = useCallback(() => {
-    setTick((t) => t + 1);
-    setUpdatedAt(new Date());
-    api.health().then(setHealth);
-  }, []);
-
-  useEffect(() => {
-    api.health().then(setHealth);
-    const id = setInterval(() => document.visibilityState === 'visible' && refresh(), REFRESH_MS);
-    return () => clearInterval(id);
-  }, [refresh]);
-
-  useEffect(() => {
-    location.hash = page;
-  }, [page]);
-
-
-  const titles: Record<Page, [string, string]> = {
-    overview: ['Overview', 'Accounts and roles at a glance'],
-    users: ['Users', 'Every account, with its role and email status'],
-  };
-
   return (
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
@@ -253,23 +223,8 @@ function Dashboard({ email }: { email: string }) {
           <div className="brand-mark">+</div>
           <div>PediaFracture<small>Admin console</small></div>
         </div>
-        {(['overview', 'users'] as Page[]).map((p) => (
-          <button key={p} className="nav-btn" aria-current={page === p ? 'page' : undefined} onClick={() => setPage(p)}>
-            {titles[p][0]}
-          </button>
-        ))}
+        <button className="nav-btn" aria-current="page">Users</button>
         <div className="sidebar-foot">
-          <div>
-            {health === undefined ? (
-              <span className="pill pill-neutral">Checking server…</span>
-            ) : health && health.status === 'degraded' ? (
-              <span className="pill pill-warn" title={health.supabase_error ?? ''}><span aria-hidden>!</span>Server degraded</span>
-            ) : health ? (
-              <span className="pill pill-good"><span aria-hidden>●</span>Server online</span>
-            ) : (
-              <span className="pill pill-bad"><span aria-hidden>✕</span>Server offline</span>
-            )}
-          </div>
           <div><span className="pill pill-good"><span aria-hidden>★</span>Admin</span></div>
           <div style={{ wordBreak: 'break-all' }}>{email}</div>
           <button className="btn" onClick={() => supabase.auth.signOut()}>Sign out</button>
@@ -278,16 +233,11 @@ function Dashboard({ email }: { email: string }) {
       <main className="main">
         <div className="page-head">
           <div>
-            <h1>{titles[page][0]}</h1>
-            <p>{titles[page][1]}</p>
-          </div>
-          <div className="toolbar">
-            <span className="muted">Updated {updatedAt.toLocaleTimeString()} · auto-refresh 30 s</span>
-            <button className="btn" onClick={refresh}>Refresh</button>
+            <h1>Users</h1>
+            <p>Every account and its role</p>
           </div>
         </div>
-        {page === 'overview' && <Overview tick={tick} onOpenUsers={() => setPage('users')} />}
-        {page === 'users' && <Users tick={tick} />}
+        <Users />
       </main>
     </div>
   );

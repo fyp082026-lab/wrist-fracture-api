@@ -87,7 +87,7 @@ def test_missing_and_bad_tokens_are_rejected(client):
 
 def test_role_based_access(client):
     # A normal user is authenticated but not allowed into any admin route.
-    for path in ("/admin/api/me", "/admin/api/overview", "/admin/api/users"):
+    for path in ("/admin/api/me", "/admin/api/users"):
         assert client.get(path, headers=USER_H).status_code == 403
     r = client.get("/admin/api/me", headers=ADMIN_H)
     assert r.status_code == 200 and r.json()["role"] == "admin"
@@ -98,21 +98,17 @@ def test_env_override_grants_admin(monkeypatch):
     assert make_client().get("/admin/api/me", headers=USER_H).status_code == 200
 
 
-def test_overview_counts_users_and_admins_separately(client):
-    d = client.get("/admin/api/overview", headers=ADMIN_H).json()
-    assert d["users_total"] == 2
-    assert d["users_verified"] == 1 and d["users_unverified"] == 1
-    assert d["users_active_7d"] == 1
-    assert d["admins_total"] == 1
-    assert len(d["signups_per_day"]) == 14
-
-
 def test_users_have_roles_and_profile_details(client):
     rows = {u["id"]: u for u in client.get("/admin/api/users", headers=ADMIN_H).json()["users"]}
     assert rows[ADMIN]["role"] == "admin"
     assert rows[U1]["role"] == "user" and rows[U1]["organisation"] == "City Clinic"
     assert rows[U2]["full_name"] == "Two From Metadata"  # falls back to sign-up metadata
-    assert rows[U2]["email_confirmed"] is False
+    # Only user details are returned: no sign-in or verification data.
+    assert set(rows[U1]) == {"id", "email", "full_name", "organisation", "role", "created_at"}
+
+
+def test_overview_endpoint_is_gone(client):
+    assert client.get("/admin/api/overview", headers=ADMIN_H).status_code == 404
 
 
 def test_missing_admins_table_means_no_db_admins(monkeypatch):

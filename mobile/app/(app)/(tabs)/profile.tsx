@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
-import Constants from 'expo-constants';
 import { COLORS, FONTS, SPACING } from '@/constants/theme';
-import { Banner, Button, Card, Header, Row, Screen, TextField, styles as ui } from '@/components/ui';
+import { Banner, Button, Card, Header, Screen, TextField, styles as ui } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { initialsFromName } from '@/services/format';
-import { config } from '@/services/config';
 
 /** Keyed on the stored values so the form re-initialises when the profile loads. */
 export default function Profile() {
@@ -67,21 +65,12 @@ function ProfileView({ banner, setBanner }: { banner: { kind: 'success' | 'error
         <Button title="Save changes" onPress={save} loading={saving} disabled={!dirty} />
       </Card>
 
-      <Card style={{ marginBottom: SPACING.base }}>
-        <Text style={[ui.h2, { marginBottom: SPACING.sm }]}>Security</Text>
+      <Card style={{ marginBottom: SPACING.lg }}>
+        <Text style={[ui.h2, { marginBottom: SPACING.sm }]}>Password</Text>
         <Button title="Email me a password reset link" variant="secondary" icon="key-outline" onPress={resetPassword} />
       </Card>
 
-      <Card style={{ marginBottom: SPACING.lg }}>
-        <Text style={[ui.h2, { marginBottom: SPACING.sm }]}>About</Text>
-        <Row label="App version" value={Constants.expoConfig?.version ?? '2.0.0'} />
-        <Row label="API server" value={config.analysisApiBaseUrl.replace(/^https?:\/\//, '') || 'Not configured'} />
-      </Card>
-
       <Button title="Sign out" variant="danger" icon="log-out-outline" onPress={confirmSignOut} />
-      <Text style={[ui.disclaimer, { marginTop: SPACING.xl }]}>
-        PediaFracture AI · user account
-      </Text>
     </Screen>
   );
 }

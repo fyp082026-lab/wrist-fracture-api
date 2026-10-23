@@ -1,4 +1,4 @@
-"""Admin API (accounts and roles), used by the admin website served at /admin.
+"""Admin API (user details and roles), used by the admin website served at /admin.
 
 Every route requires the Supabase access token of an admin: a user in
 public.admins (managed through public.admin_allowlist in Supabase), or an
@@ -7,15 +7,11 @@ The service-role client bypasses RLS, so these routes read across all
 accounts; they never write.
 """
 import os
-from collections import Counter
-from datetime import datetime, timedelta, timezone
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 MAX_ROWS = 5000
-CHART_DAYS = 14
 
 
 def admin_emails():
@@ -31,17 +27,6 @@ def _iso(value):
     if value is None:
         return None
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
-
-
-def _parse(value):
-    """Timezone-aware datetime from a datetime or ISO string, or None."""
-    if value is None:
-        return None
-    try:
-        dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def build_admin_router(supabase, verify_token):
@@ -92,8 +77,6 @@ def build_admin_router(supabase, verify_token):
                 "organisation": p.get("hospital") or meta.get("hospital"),
                 "role": "admin" if is_admin(u, db_admins) else "user",
                 "created_at": _iso(getattr(u, "created_at", None)),
-                "last_sign_in_at": _iso(getattr(u, "last_sign_in_at", None)),
-                "email_confirmed": bool(getattr(u, "email_confirmed_at", None)),
             })
         out.sort(key=lambda r: r["created_at"] or "", reverse=True)
         return out
@@ -101,23 +84,6 @@ def build_admin_router(supabase, verify_token):
     @router.get("/me")
     def me(user=Depends(require_admin)):
         return {"email": user.email, "role": "admin"}
-
-    @router.get("/overview")
-    def overview(_=Depends(require_admin)):
-        rows = account_rows()
-        users = [r for r in rows if r["role"] == "user"]
-        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        today = datetime.now(timezone.utc).date()
-        days = [today - timedelta(days=i) for i in range(CHART_DAYS - 1, -1, -1)]
-        per_day = Counter((r["created_at"] or "")[:10] for r in users)
-        return {
-            "users_total": len(users),
-            "users_verified": sum(1 for r in users if r["email_confirmed"]),
-            "users_unverified": sum(1 for r in users if not r["email_confirmed"]),
-            "users_active_7d": sum(1 for r in users if (_parse(r["last_sign_in_at"]) or week_ago) > week_ago),
-            "admins_total": len(rows) - len(users),
-            "signups_per_day": [{"date": d.isoformat(), "count": per_day.get(d.isoformat(), 0)} for d in days],
-        }
 
     @router.get("/users")
     def users(_=Depends(require_admin)):

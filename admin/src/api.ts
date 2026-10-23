@@ -8,15 +8,6 @@ export const supabase = createClient(
 
 export type Role = 'user' | 'admin';
 
-export interface Overview {
-  users_total: number;
-  users_verified: number;
-  users_unverified: number;
-  users_active_7d: number;
-  admins_total: number;
-  signups_per_day: { date: string; count: number }[];
-}
-
 export interface Account {
   id: string;
   email: string | null;
@@ -24,14 +15,6 @@ export interface Account {
   organisation: string | null;
   role: Role;
   created_at: string | null;
-  last_sign_in_at: string | null;
-  email_confirmed: boolean;
-}
-
-export interface Health {
-  status: string;
-  supabase?: 'ok' | 'error';
-  supabase_error?: string | null;
 }
 
 export class ApiError extends Error {
@@ -54,16 +37,7 @@ async function request<T>(path: string): Promise<T> {
 
 export const api = {
   me: () => request<{ email: string; role: Role }>('/admin/api/me'),
-  overview: () => request<Overview>('/admin/api/overview'),
   users: () => request<{ users: Account[] }>('/admin/api/users'),
-  health: async (): Promise<Health | null> => {
-    try {
-      const res = await fetch('/health');
-      return res.ok ? ((await res.json()) as Health) : null;
-    } catch {
-      return null;
-    }
-  },
 };
 
 export function formatDate(iso: string | null | undefined): string {
@@ -71,17 +45,5 @@ export function formatDate(iso: string | null | undefined): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? 'Unknown'
-    : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-}
-
-export function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return 'Never';
-  const diff = Date.now() - new Date(iso).getTime();
-  const min = Math.round(diff / 60000);
-  if (min < 1) return 'Just now';
-  if (min < 60) return `${min} min ago`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `${h} h ago`;
-  const d = Math.round(h / 24);
-  return d < 30 ? `${d} d ago` : formatDate(iso);
+    : d.toLocaleDateString(undefined, { dateStyle: "medium" });
 }
