@@ -142,7 +142,7 @@ jobs:
             done
           done
           # Admin API must refuse anonymous callers
-          code=$(curl -s -o /dev/null -w "%{http_code}" https://wristfracture.duckdns.org/admin/api/overview)
+          code=$(curl -s -o /dev/null -w "%{http_code}" https://wristfracture.duckdns.org/admin/api/users)
           [ "$code" = "422" ] || [ "$code" = "401" ] || { echo "admin API returned $code without a token"; exit 1; }
 
       - name: Log out of registry on server
