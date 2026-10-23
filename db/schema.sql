@@ -54,7 +54,9 @@ set search_path = public
 as $$
   select exists (select 1 from public.admins where user_id = auth.uid());
 $$;
-grant execute on function public.is_admin() to authenticated;
+-- Only signed-in accounts may call it (it only reveals the caller's own role).
+revoke execute on function public.is_admin() from public, anon;
+grant  execute on function public.is_admin() to authenticated;
 
 -- Keep admins in sync with admin_allowlist.
 create or replace function public.sync_admin_allowlist()
@@ -82,6 +84,9 @@ drop trigger if exists admin_allowlist_sync on public.admin_allowlist;
 create trigger admin_allowlist_sync
   after insert or update or delete on public.admin_allowlist
   for each row execute function public.sync_admin_allowlist();
+
+-- Runs only as a trigger; never callable through the API.
+revoke execute on function public.sync_admin_allowlist() from public, anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 -- 2. USER PROFILES (role: user)
@@ -135,6 +140,9 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- Runs only as a trigger; never callable through the API.
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+
 -- Bring existing accounts in line: admins from the list, profiles for users.
 delete from public.admins a
  where not exists (select 1 from public.admin_allowlist l where lower(l.email) = lower(a.email));
@@ -144,6 +152,11 @@ select u.id, lower(u.email), u.raw_user_meta_data ->> 'full_name'
   from auth.users u
   join public.admin_allowlist l on lower(l.email) = lower(u.email)
 on conflict (user_id) do nothing;
+
+-- Admins have no user profile (removes rows created before the role split).
+delete from public.profiles p
+ using public.admins a
+ where p.id = a.user_id;
 
 insert into public.profiles (id, full_name, hospital)
 select u.id,
@@ -167,6 +180,8 @@ drop policy if exists "Admins read own admin row" on public.admins;
 create policy "Admins read own admin row" on public.admins
   for select to authenticated using (user_id = auth.uid());
 
+-- Old catch-all policy from early development (replaced by the ones below).
+drop policy if exists "own profile"                  on public.profiles;
 drop policy if exists "Users can view own profile"   on public.profiles;
 drop policy if exists "Users can insert own profile" on public.profiles;
 drop policy if exists "Users can update own profile" on public.profiles;
