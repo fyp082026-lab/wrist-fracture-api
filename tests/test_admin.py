@@ -155,3 +155,15 @@ def test_site_is_served_and_api_still_wins(tmp_path):
     assert r.status_code in (301, 302, 307) and r.headers["location"] == "/admin/"
     assert "admin" in c.get("/admin/").text
     assert c.get("/admin/api/me", headers=ADMIN_H).json()["role"] == "admin"
+
+
+def test_page_is_never_stale_and_hashed_bundles_cache_forever(tmp_path):
+    (tmp_path / "index.html").write_text("<h1>admin</h1>")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "index-abc123.js").write_text("console.log(1)")
+    app = FastAPI()
+    mount_admin_site(app, str(tmp_path))
+    c = TestClient(app)
+    assert c.get("/admin/").headers["cache-control"] == "no-cache"
+    assert c.get("/admin/index.html").headers["cache-control"] == "no-cache"
+    assert "immutable" in c.get("/admin/assets/index-abc123.js").headers["cache-control"]

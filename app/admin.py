@@ -155,6 +155,23 @@ def build_admin_router(supabase, verify_token, get_role):
     return router
 
 
+class AdminSiteFiles(StaticFiles):
+    """Static files with cache rules that make every deploy visible at once.
+
+    The page (index.html) is revalidated on every visit, so browsers always
+    load the current version. The bundles in assets/ have a content hash in
+    their name, so a new deploy gets new names and they can be cached forever.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if path.replace("\\", "/").startswith("assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif response.media_type == "text/html":
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def mount_admin_site(app, site_dir):
     """Serves the built admin website at /admin. Call after include_router so
     /admin/api routes match before the static files."""
@@ -164,4 +181,4 @@ def mount_admin_site(app, site_dir):
         return RedirectResponse("/admin/")
 
     if os.path.isdir(site_dir):
-        app.mount("/admin", StaticFiles(directory=site_dir, html=True), name="admin-site")
+        app.mount("/admin", AdminSiteFiles(directory=site_dir, html=True), name="admin-site")
