@@ -14,6 +14,10 @@ from fastapi.staticfiles import StaticFiles
 MAX_ROWS = 5000
 SCAN_STATUSES = ("uploaded", "analyzing", "completed", "failed")
 SIGNED_URL_SECONDS = 600
+# Which analysis modes run each model (a "both" scan counts for both models).
+MODEL_MODES = {"fracture": ["fracture", "both"], "bone_age": ["bone_age", "both"]}
+# Fracture findings below this are labelled "lower confidence" (same as the apps).
+LOW_CONFIDENCE_THRESHOLD = 0.65
 
 
 def _rows(res):
@@ -95,6 +99,7 @@ def build_admin_router(supabase, verify_token, get_role):
         _=Depends(require_admin),
         status: str | None = Query(None),
         user_id: str | None = Query(None),
+        model: str | None = Query(None),
         limit: int = Query(50, ge=1, le=200),
         offset: int = Query(0, ge=0),
     ):
@@ -105,6 +110,10 @@ def build_admin_router(supabase, verify_token, get_role):
             q = q.eq("status", status)
         if user_id:
             q = q.eq("user_id", user_id)
+        if model:
+            if model not in MODEL_MODES:
+                raise HTTPException(400, "Unknown model")
+            q = q.in_("analysis_mode", MODEL_MODES[model])
         res = q.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
         rows = _rows(res)
         emails = emails_by_id()
@@ -127,6 +136,59 @@ def build_admin_router(supabase, verify_token, get_role):
                 "bone_age_months": res_row.get("bone_age_months"),
             })
         return {"scans": items, "total": getattr(res, "count", None) or len(items)}
+
+    @router.get("/models/{model}/stats")
+    def model_stats(model: str, _=Depends(require_admin)):
+        """Live numbers for one AI model, from every scan that ran it."""
+        if model not in MODEL_MODES:
+            raise HTTPException(404, "Unknown model")
+        rows = _rows(
+            supabase.table("scans").select("id, patient_id, status")
+            .in_("analysis_mode", MODEL_MODES[model]).limit(MAX_ROWS).execute()
+        )
+        counts = {s: sum(1 for r in rows if r.get("status") == s) for s in SCAN_STATUSES}
+        results = results_for([r["id"] for r in rows])
+        stats = {
+            "model": model,
+            "scans": len(rows),
+            "completed": len(results),  # a saved result means the analysis finished
+            "failed": counts["failed"],
+            "in_progress": counts["uploaded"] + counts["analyzing"],
+        }
+        if model == "fracture":
+            done = [r for r in results.values() if r.get("fracture_detected") is not None]
+            positive = [r for r in done if r["fracture_detected"]]
+            confs = [float(r["confidence"]) for r in positive if r.get("confidence") is not None]
+            bins = [0] * 10
+            for c in confs:
+                bins[min(9, int(c * 10))] += 1
+            stats.update({
+                "fracture_suggested": len(positive),
+                "no_fracture": len(done) - len(positive),
+                "lower_confidence": sum(1 for c in confs if c < LOW_CONFIDENCE_THRESHOLD),
+                "low_confidence_threshold": LOW_CONFIDENCE_THRESHOLD,
+                "mean_confidence": round(sum(confs) / len(confs), 4) if confs else None,
+                "confidence_bins": bins,  # top confidence of each finding, in 10% steps
+            })
+        else:
+            patients = patients_for([r.get("patient_id") for r in rows])
+            points = []
+            for r in rows:
+                res = results.get(r["id"]) or {}
+                age = (patients.get(r.get("patient_id")) or {}).get("age_months")
+                if res.get("bone_age_months") is not None and age is not None:
+                    points.append({"actual_months": float(age), "bone_age_months": float(res["bone_age_months"])})
+            gaps = [p["bone_age_months"] - p["actual_months"] for p in points]
+            stats.update({
+                "with_estimate": len(points),
+                # Gap to the age the user entered. Not an error: bone age can
+                # truly differ from age, but large gaps deserve a second look.
+                "mean_abs_gap_months": round(sum(abs(g) for g in gaps) / len(gaps), 2) if gaps else None,
+                "mean_gap_months": round(sum(gaps) / len(gaps), 2) if gaps else None,
+                "within_12_months": sum(1 for g in gaps if abs(g) <= 12),
+                "points": points[:500],
+            })
+        return stats
 
     @router.get("/scans/{scan_id}")
     def scan_detail(scan_id: str, _=Depends(require_admin)):

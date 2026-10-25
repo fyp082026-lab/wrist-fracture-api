@@ -15,12 +15,17 @@ TABLES = {
     ],
     "patients": [{"id": "p1", "patient_code": "P-1", "age_months": 96, "sex": "M"}],
     "scans": [
-        {"id": "s1", "user_id": U1, "patient_id": "p1", "status": "completed", "image_path": "u1/s1.jpg", "created_at": "2026-10-25T10:00:00+00:00"},
-        {"id": "s2", "user_id": U1, "patient_id": "p1", "status": "failed", "image_path": "u1/s2.jpg", "created_at": "2026-10-24T10:00:00+00:00"},
+        {"id": "s1", "user_id": U1, "patient_id": "p1", "status": "completed", "analysis_mode": "both", "image_path": "u1/s1.jpg", "created_at": "2026-10-25T10:00:00+00:00"},
+        {"id": "s2", "user_id": U1, "patient_id": "p1", "status": "failed", "analysis_mode": "both", "image_path": "u1/s2.jpg", "created_at": "2026-10-24T10:00:00+00:00"},
+        {"id": "s3", "user_id": U1, "patient_id": "p1", "status": "completed", "analysis_mode": "bone_age", "image_path": "u1/s3.jpg", "created_at": "2026-10-23T10:00:00+00:00"},
+        {"id": "s4", "user_id": U1, "patient_id": "p1", "status": "completed", "analysis_mode": "fracture", "image_path": "u1/s4.jpg", "created_at": "2026-10-22T10:00:00+00:00"},
     ],
     "analysis_results": [
         {"scan_id": "s1", "fracture_detected": True, "confidence": 0.9, "bone_age_months": 100.0,
          "detections": [{"label": "Fracture", "confidence": 0.9, "box_normalized": [0.1, 0.1, 0.2, 0.2]}]},
+        {"scan_id": "s3", "fracture_detected": None, "confidence": None, "bone_age_months": 120.0, "detections": []},
+        {"scan_id": "s4", "fracture_detected": True, "confidence": 0.5, "bone_age_months": None,
+         "detections": [{"label": "Fracture", "confidence": 0.5, "box_normalized": [0.3, 0.3, 0.4, 0.4]}]},
     ],
 }
 
@@ -132,7 +137,7 @@ def test_users_come_from_one_table_with_roles(client):
 
 def test_scans_list_filters_and_joins(client):
     d = client.get("/admin/api/scans?status=completed", headers=ADMIN_H).json()
-    assert d["total"] == 1
+    assert d["total"] == 3  # s1, s3, s4
     s = d["scans"][0]
     assert s["user_email"] == "one@x.org" and s["patient_code"] == "P-1" and s["fracture_detected"] is True
     assert client.get("/admin/api/scans?status=bogus", headers=ADMIN_H).status_code == 400
@@ -167,3 +172,33 @@ def test_page_is_never_stale_and_hashed_bundles_cache_forever(tmp_path):
     assert c.get("/admin/").headers["cache-control"] == "no-cache"
     assert c.get("/admin/index.html").headers["cache-control"] == "no-cache"
     assert "immutable" in c.get("/admin/assets/index-abc123.js").headers["cache-control"]
+
+
+def test_scans_can_be_filtered_by_model(client):
+    def ids(model):
+        return [s["id"] for s in client.get(f"/admin/api/scans?model={model}", headers=ADMIN_H).json()["scans"]]
+    assert ids("fracture") == ["s1", "s2", "s4"]
+    assert ids("bone_age") == ["s1", "s2", "s3"]
+    assert client.get("/admin/api/scans?model=fusion", headers=ADMIN_H).status_code == 400
+
+
+def test_fracture_model_stats(client):
+    s = client.get("/admin/api/models/fracture/stats", headers=ADMIN_H).json()
+    assert (s["scans"], s["completed"], s["failed"]) == (3, 2, 1)
+    assert (s["fracture_suggested"], s["no_fracture"], s["lower_confidence"]) == (2, 0, 1)
+    assert s["mean_confidence"] == 0.7
+    assert s["confidence_bins"][5] == 1 and s["confidence_bins"][9] == 1
+
+
+def test_bone_age_model_stats(client):
+    s = client.get("/admin/api/models/bone_age/stats", headers=ADMIN_H).json()
+    assert (s["scans"], s["completed"], s["with_estimate"]) == (3, 2, 2)
+    # patient is 96 months; estimates 100 and 120 -> gaps +4 and +24
+    assert s["mean_abs_gap_months"] == 14.0 and s["mean_gap_months"] == 14.0
+    assert s["within_12_months"] == 1
+    assert {"actual_months": 96.0, "bone_age_months": 120.0} in s["points"]
+
+
+def test_model_stats_are_admin_only_and_known_models_only(client):
+    assert client.get("/admin/api/models/fracture/stats", headers=USER_H).status_code == 403
+    assert client.get("/admin/api/models/fusion/stats", headers=ADMIN_H).status_code == 404

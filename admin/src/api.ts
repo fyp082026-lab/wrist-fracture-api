@@ -71,6 +71,35 @@ export interface ScanDetail {
   image_url: string | null;
 }
 
+/** Live numbers for one model, from every scan that ran it. */
+export interface ModelStatsBase {
+  scans: number;
+  completed: number;
+  failed: number;
+  in_progress: number;
+}
+
+export interface FractureStats extends ModelStatsBase {
+  model: 'fracture';
+  fracture_suggested: number;
+  no_fracture: number;
+  lower_confidence: number;
+  low_confidence_threshold: number;
+  mean_confidence: number | null;
+  confidence_bins: number[];
+}
+
+export interface BoneAgeStats extends ModelStatsBase {
+  model: 'bone_age';
+  with_estimate: number;
+  mean_abs_gap_months: number | null;
+  mean_gap_months: number | null;
+  within_12_months: number;
+  points: { actual_months: number; bone_age_months: number }[];
+}
+
+export type ModelStats = FractureStats | BoneAgeStats;
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -92,12 +121,14 @@ async function request<T>(path: string): Promise<T> {
 export const api = {
   me: () => request<{ email: string; role: Role }>('/admin/api/me'),
   users: () => request<{ users: Account[] }>('/admin/api/users'),
-  scans: (params: { status?: string; userId?: string; limit: number; offset: number }) => {
+  scans: (params: { status?: string; userId?: string; model?: 'fracture' | 'bone_age'; limit: number; offset: number }) => {
     const q = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
     if (params.status) q.set('status', params.status);
     if (params.userId) q.set('user_id', params.userId);
+    if (params.model) q.set('model', params.model);
     return request<{ scans: ScanRow[]; total: number }>(`/admin/api/scans?${q}`);
   },
+  modelStats: (model: 'fracture' | 'bone_age') => request<ModelStats>(`/admin/api/models/${model}/stats`),
   scan: (id: string) => request<ScanDetail>(`/admin/api/scans/${encodeURIComponent(id)}`),
 };
 

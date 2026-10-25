@@ -9,6 +9,8 @@ export interface ScanFilter {
   status?: ScanStatus;
   userId?: string;
   userLabel?: string;
+  /** Only scans that ran this model (a "both" scan counts for both). */
+  model?: 'fracture' | 'bone_age';
 }
 
 export function Scans({
@@ -27,26 +29,26 @@ export function Scans({
   const [openId, setOpenId] = useState<string | null>(null);
   const closeDrawer = useCallback(() => setOpenId(null), []);
 
-  useEffect(() => setOffset(0), [filter.status, filter.userId]);
+  useEffect(() => setOffset(0), [filter.status, filter.userId, filter.model]);
 
   useEffect(() => {
     let live = true;
-    api.scans({ status: filter.status, userId: filter.userId, limit: PAGE, offset }).then(
+    api.scans({ status: filter.status, userId: filter.userId, model: filter.model, limit: PAGE, offset }).then(
       (d) => { if (live) { setRows(d.scans); setTotal(d.total); setError(null); } },
       (e: Error) => live && setError(e.message)
     );
     return () => { live = false; };
-  }, [tick, filter.status, filter.userId, offset]);
+  }, [tick, filter.status, filter.userId, filter.model, offset]);
 
   return (
     <section className="card">
       <div className="toolbar" style={{ marginBottom: 14, justifyContent: 'space-between' }}>
-        <h2 style={{ margin: 0 }}>Scans <span className="muted num">({total})</span></h2>
+        <h2 style={{ margin: 0 }}>{filter.model ? 'Scans that ran this model' : 'Scans'} <span className="muted num">({total})</span></h2>
         <div className="toolbar">
           {filter.userId && (
             <span className="pill pill-neutral">
               {filter.userLabel}
-              <button className="linkish" aria-label="Clear user filter" onClick={() => onFilter({ status: filter.status })}>✕</button>
+              <button className="linkish" aria-label="Clear user filter" onClick={() => onFilter({ status: filter.status, model: filter.model })}>✕</button>
             </span>
           )}
           <label className="sr-only" htmlFor="status-filter">Status</label>

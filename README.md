@@ -49,6 +49,11 @@ and the choice is saved with the scan (`scans.analysis_mode`, `analysis_results.
 
 A result that did not run a model shows that part as **Not run** (never as "no fracture").
 
+Each model also has its own page on the admin website (sidebar → under **Scans**): its training
+accuracy and charts, live numbers from every scan that ran it (`GET /admin/api/models/{model}/stats`),
+suggestions, limitations and the list of its scans. The training figures and notes live in
+[`admin/src/models.ts`](admin/src/models.ts); the charts in `admin/public/charts/`.
+
 ## How a scan works
 
 1. The app uploads the X-ray to the private `wrist-xrays` bucket (`<user id>/<scan id>.jpg`) and
@@ -75,7 +80,8 @@ app), and the app accepts small rounding errors in result values instead of reje
 | `POST /analyze` | user | runs `analysis_mode` (`fracture`, `bone_age` or `both`) on one scan |
 | `GET /admin/api/me` | admin | admin confirmation (403 for users) |
 | `GET /admin/api/users` | admin | every account with its role |
-| `GET /admin/api/scans` | admin | every scan with patient and result (filter by status or user) |
+| `GET /admin/api/scans` | admin | every scan with patient and result (filter by status, user or model) |
+| `GET /admin/api/models/{model}/stats` | admin | live numbers for `fracture` or `bone_age` |
 | `GET /admin/api/scans/{id}` | admin | one scan, its result and a temporary image link |
 
 ## One-time setup

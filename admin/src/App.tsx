@@ -3,6 +3,8 @@ import type { Session } from '@supabase/supabase-js';
 import { api, ApiError, supabase } from './api';
 import { Users } from './pages/Users';
 import { Scans, type ScanFilter } from './pages/Scans';
+import { AiModel } from './pages/AiModel';
+import { MODELS, MODEL_ORDER, type ModelId } from './models';
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -223,11 +225,21 @@ function Login({ denied, expired, idle }: { denied: boolean; expired: boolean; i
   );
 }
 
-type Page = 'users' | 'scans';
-const TITLES: Record<Page, [string, string]> = {
-  users: ['Users', 'Every account and its role'],
-  scans: ['Scans', 'Every X-ray analysed through the server'],
-};
+type ModelPage = `ai-${ModelId}`;
+type Page = 'users' | 'scans' | ModelPage;
+const PAGES: Page[] = ['users', 'scans', ...MODEL_ORDER.map((m): ModelPage => `ai-${m}`)];
+const modelOf = (p: Page): ModelId | null => (p.startsWith('ai-') ? (p.slice(3) as ModelId) : null);
+
+function titleOf(p: Page): [string, string] {
+  const m = modelOf(p);
+  if (m) {
+    const what = MODELS[m].status === 'live' ? 'accuracy, live results and suggestions' : 'not trained yet · plan and suggestions';
+    return [MODELS[m].name, `${MODELS[m].architecture} · ${what}`];
+  }
+  return p === 'users'
+    ? ['Users', 'Every account and its role']
+    : ['Scans', 'Every X-ray analysed through the server'];
+}
 
 // Admins are signed out after 30 minutes without mouse, keyboard or touch activity,
 // with a one-minute warning first. Activity in any open tab counts.
@@ -286,7 +298,10 @@ function useIdleSignOut(onTimeout: () => void) {
 }
 
 function Dashboard({ email, onIdle }: { email: string; onIdle: () => void }) {
-  const [page, setPage] = useState<Page>(() => (location.hash.slice(1) === 'scans' ? 'scans' : 'users'));
+  const [page, setPage] = useState<Page>(() => {
+    const h = location.hash.slice(1) as Page;
+    return PAGES.includes(h) ? h : 'users';
+  });
   const [tick, setTick] = useState(0);
   const [scanFilter, setScanFilter] = useState<ScanFilter>({});
   const { secondsLeft, stay } = useIdleSignOut(onIdle);
@@ -304,9 +319,17 @@ function Dashboard({ email, onIdle }: { email: string; onIdle: () => void }) {
         </div>
         {(['users', 'scans'] as Page[]).map((p) => (
           <button key={p} className="nav-btn" aria-current={page === p ? 'page' : undefined} onClick={() => { if (p === 'scans') setScanFilter({}); setPage(p); }}>
-            {TITLES[p][0]}
+            {titleOf(p)[0]}
           </button>
         ))}
+        <div className="nav-group" role="group" aria-label="AI models">
+          {MODEL_ORDER.map((m) => (
+            <button key={m} className="nav-btn nav-sub" aria-current={page === `ai-${m}` ? 'page' : undefined} onClick={() => setPage(`ai-${m}`)}>
+              {MODELS[m].name}
+              {MODELS[m].status !== 'live' && <span className="nav-note">soon</span>}
+            </button>
+          ))}
+        </div>
         <div className="sidebar-foot">
           <div><span className="pill pill-good"><span aria-hidden>★</span>Admin</span></div>
           <div style={{ wordBreak: 'break-all' }}>{email}</div>
@@ -316,10 +339,10 @@ function Dashboard({ email, onIdle }: { email: string; onIdle: () => void }) {
       <main className="main">
         <div className="page-head">
           <div>
-            <h1>{TITLES[page][0]}</h1>
-            <p>{TITLES[page][1]}</p>
+            <h1>{titleOf(page)[0]}</h1>
+            <p>{titleOf(page)[1]}</p>
           </div>
-          {page === 'scans' && (
+          {(page === 'scans' || (modelOf(page) && modelOf(page) !== 'fusion')) && (
             <div className="toolbar">
               <button className="btn" onClick={() => setTick((t) => t + 1)}>Refresh</button>
             </div>
@@ -327,6 +350,7 @@ function Dashboard({ email, onIdle }: { email: string; onIdle: () => void }) {
         </div>
         {page === 'users' && <Users />}
         {page === 'scans' && <Scans tick={tick} filter={scanFilter} onFilter={setScanFilter} />}
+        {modelOf(page) && <AiModel id={modelOf(page)!} tick={tick} />}
       </main>
       {secondsLeft !== null && (
         <div className="drawer-backdrop center" data-idle-warning role="alertdialog" aria-labelledby="idle-title" aria-describedby="idle-body">
