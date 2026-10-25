@@ -1,112 +1,35 @@
 -- =============================================================================
--- PediaFracture - Supabase setup: AUTHENTICATION AND ROLE-BASED ACCESS
+-- PediaFracture - Supabase setup (full app, one users table)
 -- =============================================================================
 -- Run in Supabase: SQL Editor -> New query -> paste all -> Run.
--- Safe on an existing project and safe to run again: it only creates or
--- updates auth objects. It does NOT touch the scan tables (patients, scans,
--- analysis_results) or the X-ray storage bucket; those belong to the full app
--- on the backup/full-app branch and keep their data.
+-- Creates everything a NEW project needs. Safe to run again. An existing
+-- project that still has public.admins / public.admin_allowlist is upgraded
+-- with db/migrations/004_single_users_table.sql instead.
 --
--- Two roles, stored separately:
---   USER  -> signs up in the MOBILE APP     -> row in public.profiles
---   ADMIN -> signs in to the ADMIN WEBSITE  -> row in public.admins
--- Who is an admin is decided ONLY by public.admin_allowlist:
---   add an email    -> that account becomes an admin at once
---                      (or as soon as it signs up)
---   delete the row  -> admin access is removed at once
+-- One table holds every account:   public.profiles (role = 'user' | 'admin')
+--   user  -> mobile app (scans X-rays)
+--   admin -> admin website (sees every account and scan)
+-- The database only enforces OWNERSHIP ("your own rows"). What each role may
+-- do is decided in code: the API server and both apps read profiles.role.
+-- To make someone an admin: Table Editor -> profiles -> set role to 'admin'.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 1. ADMINS
--- -----------------------------------------------------------------------------
-create table if not exists public.admin_allowlist (
-  email      text primary key,
-  note       text,
-  created_at timestamptz not null default now()
-);
-comment on table public.admin_allowlist is
-  'Emails that have the Admin role. Add or delete rows here to grant or revoke admin access.';
-
-create table if not exists public.admins (
-  user_id    uuid primary key references auth.users (id) on delete cascade,
-  email      text not null unique,
-  full_name  text,
-  created_at timestamptz not null default now()
-);
-comment on table public.admins is
-  'Accounts with the Admin role (kept in sync with admin_allowlist automatically).';
-
--- First admin, only when the list is empty (a fresh project). After that,
--- manage admins in Table Editor -> admin_allowlist; re-running this script
--- never re-adds an email you removed.
-insert into public.admin_allowlist (email, note)
-select 'fyp082026@gmail.com', 'Initial administrator'
- where not exists (select 1 from public.admin_allowlist);
-
--- True when the signed-in account has the Admin role. Used by RLS policies
--- and by the mobile app (which refuses admin accounts).
-create or replace function public.is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (select 1 from public.admins where user_id = auth.uid());
-$$;
--- Only signed-in accounts may call it (it only reveals the caller's own role).
-revoke execute on function public.is_admin() from public, anon;
-grant  execute on function public.is_admin() to authenticated;
-
--- Keep admins in sync with admin_allowlist.
-create or replace function public.sync_admin_allowlist()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if tg_op in ('DELETE', 'UPDATE') then
-    delete from public.admins where lower(email) = lower(old.email);
-  end if;
-  if tg_op in ('INSERT', 'UPDATE') then
-    insert into public.admins (user_id, email, full_name)
-    select u.id, lower(u.email), u.raw_user_meta_data ->> 'full_name'
-      from auth.users u
-     where lower(u.email) = lower(new.email)
-    on conflict (user_id) do nothing;
-  end if;
-  return null;
-end;
-$$;
-
-drop trigger if exists admin_allowlist_sync on public.admin_allowlist;
-create trigger admin_allowlist_sync
-  after insert or update or delete on public.admin_allowlist
-  for each row execute function public.sync_admin_allowlist();
-
--- Runs only as a trigger; never callable through the API.
-revoke execute on function public.sync_admin_allowlist() from public, anon, authenticated;
-
--- -----------------------------------------------------------------------------
--- 2. USER PROFILES (role: user)
+-- 1. ACCOUNTS
 -- -----------------------------------------------------------------------------
 create table if not exists public.profiles (
   id         uuid primary key references auth.users (id) on delete cascade,
   full_name  text,
   hospital   text,
-  created_at timestamptz not null default now()
+  role       text not null default 'user' check (role in ('user', 'admin')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
-alter table public.profiles add column if not exists full_name  text;
-alter table public.profiles add column if not exists hospital   text;
-alter table public.profiles add column if not exists created_at timestamptz not null default now();
-alter table public.profiles add column if not exists updated_at timestamptz not null default now();
-comment on table public.profiles is 'Profiles of users (role: user) who sign up in the mobile app.';
-comment on column public.profiles.hospital is 'Shown as "Organisation" in the app and admin website.';
+comment on table  public.profiles is 'Every account (users and admins). role decides what the account may use.';
+comment on column public.profiles.role is 'user = mobile app; admin = admin website. Change it here to grant or remove admin.';
+comment on column public.profiles.hospital is 'Shown as "Organisation" in the apps.';
 
--- -----------------------------------------------------------------------------
--- 3. SIGN-UP: decide the role of every new account
--- -----------------------------------------------------------------------------
+-- Every new account gets a profile with role 'user'.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -114,19 +37,14 @@ security definer
 set search_path = public
 as $$
 begin
-  if exists (select 1 from public.admin_allowlist where lower(email) = lower(new.email)) then
-    insert into public.admins (user_id, email, full_name)
-    values (new.id, lower(new.email), new.raw_user_meta_data ->> 'full_name')
-    on conflict (user_id) do nothing;
-  else
-    insert into public.profiles (id, full_name, hospital)
-    values (
-      new.id,
-      coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name'),
-      nullif(new.raw_user_meta_data ->> 'hospital', '')
-    )
-    on conflict (id) do nothing;
-  end if;
+  insert into public.profiles (id, full_name, hospital, role)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name'),
+    nullif(new.raw_user_meta_data ->> 'hospital', ''),
+    'user'
+  )
+  on conflict (id) do nothing;
   return new;
 exception when others then
   -- Never block a sign-up; the app creates the profile itself if this failed.
@@ -134,75 +52,126 @@ exception when others then
   return new;
 end;
 $$;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- Runs only as a trigger; never callable through the API.
-revoke execute on function public.handle_new_user() from public, anon, authenticated;
-
--- Bring existing accounts in line: admins from the list, profiles for users.
-delete from public.admins a
- where not exists (select 1 from public.admin_allowlist l where lower(l.email) = lower(a.email));
-
-insert into public.admins (user_id, email, full_name)
-select u.id, lower(u.email), u.raw_user_meta_data ->> 'full_name'
-  from auth.users u
-  join public.admin_allowlist l on lower(l.email) = lower(u.email)
-on conflict (user_id) do nothing;
-
--- Admins have no user profile (removes rows created before the role split).
-delete from public.profiles p
- using public.admins a
- where p.id = a.user_id;
-
-insert into public.profiles (id, full_name, hospital)
-select u.id,
-       coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name'),
-       nullif(u.raw_user_meta_data ->> 'hospital', '')
-  from auth.users u
- where not exists (select 1 from public.profiles p where p.id = u.id)
-   and not exists (select 1 from public.admins a where a.user_id = u.id)
-on conflict (id) do nothing;
+-- Users may edit their name and organisation, never their role.
+revoke insert, update on public.profiles from anon, authenticated;
+grant  insert (id, full_name, hospital)         on public.profiles to authenticated;
+grant  update (full_name, hospital, updated_at) on public.profiles to authenticated;
 
 -- -----------------------------------------------------------------------------
--- 4. ROW LEVEL SECURITY (who can read or change what)
---    User : only their own profile.     Admin : can read every profile.
---    Nobody writes the admin tables from the app or website.
+-- 2. SCANS (written by the mobile app and the API server)
 -- -----------------------------------------------------------------------------
-alter table public.admin_allowlist enable row level security;
-alter table public.admins          enable row level security;
-alter table public.profiles        enable row level security;
+create table if not exists public.patients (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  patient_code text,
+  sex          text not null constraint patients_sex_check check (sex in ('M', 'F')),
+  age_months   integer not null constraint patients_age_months_check check (age_months between 1 and 240),
+  created_at   timestamptz not null default now()
+);
 
-drop policy if exists "Admins read own admin row" on public.admins;
-create policy "Admins read own admin row" on public.admins
-  for select to authenticated using (user_id = auth.uid());
+create table if not exists public.scans (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  patient_id uuid references public.patients (id) on delete set null,
+  image_path text not null,
+  status     text not null default 'uploaded'
+             constraint scans_status_check check (status in ('uploaded', 'analyzing', 'completed', 'failed')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
--- Old catch-all policy from early development (replaced by the ones below).
-drop policy if exists "own profile"                  on public.profiles;
+create table if not exists public.analysis_results (
+  id                  uuid primary key default gen_random_uuid(),
+  scan_id             uuid not null unique references public.scans (id) on delete cascade,
+  user_id             uuid not null references auth.users (id) on delete cascade,
+  fracture_detected   boolean,
+  confidence          double precision,
+  fracture_confidence numeric,
+  low_confidence      boolean not null default false,
+  fracture_type       text,
+  detections          jsonb not null default '[]'::jsonb,
+  bone_age_months     numeric,
+  grad_cam_path       text,
+  gradcam_path        text,
+  model_version       text,
+  clinical_disclaimer text,
+  created_at          timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
+-- 3. ROW LEVEL SECURITY: ownership only, no roles
+--    The admin website never reads these tables directly; it calls the API
+--    server, which checks profiles.role = 'admin' in code.
+-- -----------------------------------------------------------------------------
+alter table public.profiles         enable row level security;
+alter table public.patients         enable row level security;
+alter table public.scans            enable row level security;
+alter table public.analysis_results enable row level security;
+
 drop policy if exists "Users can view own profile"   on public.profiles;
 drop policy if exists "Users can insert own profile" on public.profiles;
 drop policy if exists "Users can update own profile" on public.profiles;
-drop policy if exists "Admins can view all profiles" on public.profiles;
+create policy "Users can view own profile"   on public.profiles for select to authenticated using (id = auth.uid());
+create policy "Users can insert own profile" on public.profiles for insert to authenticated with check (id = auth.uid());
+create policy "Users can update own profile" on public.profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 
-create policy "Users can view own profile" on public.profiles
-  for select to authenticated using (id = auth.uid());
-create policy "Users can insert own profile" on public.profiles
-  for insert to authenticated with check (id = auth.uid() and not public.is_admin());
-create policy "Users can update own profile" on public.profiles
-  for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
-create policy "Admins can view all profiles" on public.profiles
-  for select to authenticated using (public.is_admin());
+drop policy if exists "Users can select own patients" on public.patients;
+drop policy if exists "Users can insert own patients" on public.patients;
+drop policy if exists "Users can update own patients" on public.patients;
+drop policy if exists "Users can delete own patients" on public.patients;
+create policy "Users can select own patients" on public.patients for select to authenticated using (user_id = auth.uid());
+create policy "Users can insert own patients" on public.patients for insert to authenticated with check (user_id = auth.uid());
+create policy "Users can update own patients" on public.patients for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "Users can delete own patients" on public.patients for delete to authenticated using (user_id = auth.uid());
+
+-- Users create scans as 'uploaded' and may retry a failed one; only the server
+-- (service key) sets 'analyzing' and 'completed'.
+drop policy if exists "Users can select own scans" on public.scans;
+drop policy if exists "Users can insert own scans" on public.scans;
+drop policy if exists "Users can update own scans" on public.scans;
+drop policy if exists "Users can delete own scans" on public.scans;
+create policy "Users can select own scans" on public.scans for select to authenticated using (user_id = auth.uid());
+create policy "Users can insert own scans" on public.scans for insert to authenticated with check (user_id = auth.uid() and status = 'uploaded');
+create policy "Users can update own scans" on public.scans for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid() and status in ('uploaded', 'failed'));
+create policy "Users can delete own scans" on public.scans for delete to authenticated using (user_id = auth.uid());
+
+-- Results are written only by the server.
+drop policy if exists "Users can view own analysis results" on public.analysis_results;
+create policy "Users can view own analysis results" on public.analysis_results for select to authenticated
+  using (scan_id in (select id from public.scans where user_id = auth.uid()));
+
+-- -----------------------------------------------------------------------------
+-- 4. X-RAY STORAGE: private bucket, one folder per user (<user id>/<file>)
+-- -----------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('wrist-xrays', 'wrist-xrays', false)
+on conflict (id) do nothing;
+
+drop policy if exists "xray read own"   on storage.objects;
+drop policy if exists "xray upload own" on storage.objects;
+drop policy if exists "xray delete own" on storage.objects;
+drop policy if exists "xray update own" on storage.objects;
+create policy "xray read own" on storage.objects for select to authenticated
+  using (bucket_id = 'wrist-xrays' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "xray upload own" on storage.objects for insert to authenticated
+  with check (bucket_id = 'wrist-xrays' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "xray delete own" on storage.objects for delete to authenticated
+  using (bucket_id = 'wrist-xrays' and (storage.foldername(name))[1] = auth.uid()::text);
+-- Needed because the app uploads with upsert (a retried upload replaces the file).
+create policy "xray update own" on storage.objects for update to authenticated
+  using (bucket_id = 'wrist-xrays' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'wrist-xrays' and (storage.foldername(name))[1] = auth.uid()::text);
 
 -- -----------------------------------------------------------------------------
 -- 5. Refresh the API and show a summary
 -- -----------------------------------------------------------------------------
 notify pgrst, 'reload schema';
 
-select
-  (select count(*) from auth.users)          as total_accounts,
-  (select count(*) from public.admins)       as admins,
-  (select count(*) from public.profiles)     as user_profiles,
-  (select string_agg(email, ', ') from public.admin_allowlist) as admin_emails;
+select role, count(*) as accounts from public.profiles group by role order by role;
