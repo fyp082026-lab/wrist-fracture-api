@@ -17,6 +17,45 @@ export interface Account {
   created_at: string | null;
 }
 
+export type ScanStatus = 'uploaded' | 'analyzing' | 'completed' | 'failed';
+
+export interface ScanRow {
+  id: string;
+  user_id: string;
+  patient_id: string | null;
+  status: ScanStatus;
+  created_at: string;
+  user_email: string | null;
+  patient_code: string | null;
+  patient_age_months: number | null;
+  patient_sex: 'M' | 'F' | null;
+  fracture_detected: boolean | null;
+  confidence: number | null;
+  bone_age_months: number | null;
+}
+
+export interface Detection {
+  label: string;
+  confidence: number;
+  box_normalized: [number, number, number, number];
+}
+
+export interface ScanDetail {
+  scan: { id: string; user_id: string; status: ScanStatus; created_at: string; image_path: string };
+  patient: { patient_code: string | null; age_months: number | null; sex: 'M' | 'F' | null } | null;
+  result: {
+    fracture_detected: boolean;
+    confidence: number | null;
+    fracture_confidence?: number | null;
+    detections: Detection[] | null;
+    bone_age_months: number | null;
+    clinical_disclaimer: string | null;
+    created_at: string;
+  } | null;
+  user_email: string | null;
+  image_url: string | null;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -38,7 +77,31 @@ async function request<T>(path: string): Promise<T> {
 export const api = {
   me: () => request<{ email: string; role: Role }>('/admin/api/me'),
   users: () => request<{ users: Account[] }>('/admin/api/users'),
+  scans: (params: { status?: string; userId?: string; limit: number; offset: number }) => {
+    const q = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
+    if (params.status) q.set('status', params.status);
+    if (params.userId) q.set('user_id', params.userId);
+    return request<{ scans: ScanRow[]; total: number }>(`/admin/api/scans?${q}`);
+  },
+  scan: (id: string) => request<ScanDetail>(`/admin/api/scans/${encodeURIComponent(id)}`),
 };
+
+export function formatMonths(months: number | null | undefined): string {
+  if (months == null) return 'Not available';
+  const m = Math.round(Number(months));
+  return `${Math.floor(m / 12)}y ${m % 12}m`;
+}
+
+export function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return 'Never';
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return 'Just now';
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d < 30 ? `${d} d ago` : formatDate(iso);
+}
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return 'Never';

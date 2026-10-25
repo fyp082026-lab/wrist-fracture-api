@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { api, ApiError, supabase } from './api';
 import { Users } from './pages/Users';
-
+import { Scans, type ScanFilter } from './pages/Scans';
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [adminState, setAdminState] = useState<'checking' | 'ok' | 'denied' | 'expired' | 'server'>('checking');
+  const [adminState, setAdminState] = useState<'checking' | 'ok' | 'denied' | 'expired' | 'idle' | 'server'>('checking');
   const [serverDetail, setServerDetail] = useState('');
   // Opened from a password-reset email: ask for a new password before anything else.
   const [recovery, setRecovery] = useState(
@@ -20,6 +20,11 @@ export function App() {
       setSession(s);
     });
     return () => data.subscription.unsubscribe();
+  }, []);
+
+  const signOutIdle = useCallback(() => {
+    setAdminState('idle');
+    supabase.auth.signOut();
   }, []);
 
   const finishRecovery = useCallback(() => {
@@ -50,7 +55,7 @@ export function App() {
 
   if (session === undefined) return <div className="center" style={{ minHeight: '100vh' }}><div className="spinner" /></div>;
   if (recovery) return <SetNewPassword session={session} onDone={finishRecovery} />;
-  if (!session) return <Login denied={adminState === 'denied'} expired={adminState === 'expired'} />;
+  if (!session) return <Login denied={adminState === 'denied'} expired={adminState === 'expired'} idle={adminState === 'idle'} />;
   if (adminState === 'server') {
     return (
       <div className="login-wrap">
@@ -69,7 +74,7 @@ export function App() {
     );
   }
   if (adminState === 'checking') return <div className="center" style={{ minHeight: '100vh' }}><div className="spinner" /></div>;
-  return <Dashboard email={session.user.email ?? ''} />;
+  return <Dashboard email={session.user.email ?? ''} onIdle={signOutIdle} />;
 }
 
 function SetNewPassword({ session, onDone }: { session: Session | null; onDone: () => void }) {
@@ -94,6 +99,7 @@ function SetNewPassword({ session, onDone }: { session: Session | null; onDone: 
     e.preventDefault();
     if (password.length < 8) return setError('Use at least 8 characters.');
     if (password !== confirm) return setError('The two passwords do not match.');
+    markActive();
     setBusy(true);
     setError(null);
     const { error: err } = await supabase.auth.updateUser({ password });
@@ -124,7 +130,7 @@ function SetNewPassword({ session, onDone }: { session: Session | null; onDone: 
   );
 }
 
-function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
+function Login({ denied, expired, idle }: { denied: boolean; expired: boolean; idle: boolean }) {
   const [mode, setMode] = useState<'signin' | 'forgot'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -171,6 +177,7 @@ function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    markActive(); // a fresh sign-in starts a new 30-minute idle window
     const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
     setBusy(false);
     if (err) {
@@ -195,6 +202,7 @@ function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
         <p>For administrators only. Users sign in with the mobile app.</p>
         {denied && <div className="banner banner-error">This account has the User role, not Admin. Users sign in with the mobile app.</div>}
         {expired && <div className="banner banner-info">Your sign-in expired. Please sign in again.</div>}
+        {idle && <div className="banner banner-info">You were signed out after 30 minutes of inactivity.</div>}
         {error && <div className="banner banner-error" role="alert">{error}</div>}
         <div className="field">
           <label htmlFor="email">Email</label>
@@ -215,7 +223,78 @@ function Login({ denied, expired }: { denied: boolean; expired: boolean }) {
   );
 }
 
-function Dashboard({ email }: { email: string }) {
+type Page = 'users' | 'scans';
+const TITLES: Record<Page, [string, string]> = {
+  users: ['Users', 'Every account and its role'],
+  scans: ['Scans', 'Every X-ray analysed through the server'],
+};
+
+// Admins are signed out after 30 minutes without mouse, keyboard or touch activity,
+// with a one-minute warning first. Activity in any open tab counts.
+const IDLE_MS = 30 * 60_000;
+const WARN_MS = 60_000;
+const ACTIVITY_KEY = 'pediafracture-admin-last-activity';
+const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'] as const;
+
+function lastActivity(): number {
+  try {
+    return Number(localStorage.getItem(ACTIVITY_KEY)) || Date.now();
+  } catch {
+    return Date.now();
+  }
+}
+
+function markActive() {
+  try {
+    localStorage.setItem(ACTIVITY_KEY, String(Date.now()));
+  } catch { /* private window: this tab still tracks its own activity */ }
+}
+
+function useIdleSignOut(onTimeout: () => void) {
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+
+  const touch = useCallback(() => {
+    markActive();
+    setSecondsLeft(null);
+  }, []);
+
+  useEffect(() => {
+    // A session left idle while the browser was closed is signed out on return.
+    if (Date.now() - lastActivity() >= IDLE_MS) return onTimeout();
+    touch();
+    let last = 0;
+    const onActivity = () => {
+      // While the warning is showing, only the "Stay signed in" button keeps the session.
+      if (Date.now() - last < 5_000 || document.querySelector('[data-idle-warning]')) return;
+      last = Date.now();
+      touch();
+    };
+    ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+    const id = setInterval(() => {
+      const idle = Date.now() - lastActivity();
+      if (idle >= IDLE_MS) onTimeout();
+      else if (idle >= IDLE_MS - WARN_MS) setSecondsLeft(Math.ceil((IDLE_MS - idle) / 1000));
+      else setSecondsLeft(null);
+    }, 1000);
+    return () => {
+      ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onActivity));
+      clearInterval(id);
+    };
+  }, [onTimeout, touch]);
+
+  return { secondsLeft, stay: touch };
+}
+
+function Dashboard({ email, onIdle }: { email: string; onIdle: () => void }) {
+  const [page, setPage] = useState<Page>(() => (location.hash.slice(1) === 'scans' ? 'scans' : 'users'));
+  const [tick, setTick] = useState(0);
+  const [scanFilter, setScanFilter] = useState<ScanFilter>({});
+  const { secondsLeft, stay } = useIdleSignOut(onIdle);
+
+  useEffect(() => {
+    location.hash = page;
+  }, [page]);
+
   return (
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
@@ -223,7 +302,11 @@ function Dashboard({ email }: { email: string }) {
           <div className="brand-mark">+</div>
           <div>PediaFracture<small>Admin console</small></div>
         </div>
-        <button className="nav-btn" aria-current="page">Users</button>
+        {(['users', 'scans'] as Page[]).map((p) => (
+          <button key={p} className="nav-btn" aria-current={page === p ? 'page' : undefined} onClick={() => { if (p === 'scans') setScanFilter({}); setPage(p); }}>
+            {TITLES[p][0]}
+          </button>
+        ))}
         <div className="sidebar-foot">
           <div><span className="pill pill-good"><span aria-hidden>★</span>Admin</span></div>
           <div style={{ wordBreak: 'break-all' }}>{email}</div>
@@ -233,12 +316,28 @@ function Dashboard({ email }: { email: string }) {
       <main className="main">
         <div className="page-head">
           <div>
-            <h1>Users</h1>
-            <p>Every account and its role</p>
+            <h1>{TITLES[page][0]}</h1>
+            <p>{TITLES[page][1]}</p>
+          </div>
+          {page === 'scans' && (
+            <div className="toolbar">
+              <button className="btn" onClick={() => setTick((t) => t + 1)}>Refresh</button>
+            </div>
+          )}
+        </div>
+        {page === 'users' && <Users />}
+        {page === 'scans' && <Scans tick={tick} filter={scanFilter} onFilter={setScanFilter} />}
+      </main>
+      {secondsLeft !== null && (
+        <div className="drawer-backdrop center" data-idle-warning role="alertdialog" aria-labelledby="idle-title" aria-describedby="idle-body">
+          <div className="card login-card">
+            <h1 id="idle-title">Still there?</h1>
+            <p id="idle-body">For security you will be signed out in {secondsLeft} s because of inactivity.</p>
+            <button className="btn btn-primary" style={{ width: '100%', marginBottom: 10 }} onClick={stay} autoFocus>Stay signed in</button>
+            <button className="btn" style={{ width: '100%' }} onClick={onIdle}>Sign out now</button>
           </div>
         </div>
-        <Users />
-      </main>
+      )}
     </div>
   );
 }

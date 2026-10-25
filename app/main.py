@@ -1,16 +1,19 @@
-"""PediaFracture API - authentication and role-based access.
+"""PediaFracture API: authentication, roles and AI analysis of wrist X-rays.
 
-Users sign in to the mobile app with Supabase; admins sign in to the admin
-website served at /admin. This API verifies Supabase access tokens and gives
-admins read access to the user list. (The AI analysis endpoints live on the
-backup/full-app branch.)
+- Users sign in to the mobile app and send X-rays to POST /analyze.
+- Admins sign in to the admin website (/admin) and read users and scans.
+Roles live in public.profiles.role and are checked here, in code.
 """
+import io
 import os
+import time
 
 from fastapi import FastAPI, Header, HTTPException, Depends
+from pydantic import BaseModel
 from supabase import create_client
 
 from app.supabase_check import SupabaseProbe, is_api_key_error
+from app.results import build_result
 
 app = FastAPI(title="PediaFracture API")
 
@@ -19,6 +22,22 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase_probe = SupabaseProbe(supabase)
+
+# The models need torch/ultralytics (installed in the Docker image only).
+try:
+    from app import inference
+    inference_error = None
+except Exception as e:  # tests and machines without the ML packages
+    inference = None
+    inference_error = f"{type(e).__name__}: {e}"
+    print("AI models not loaded:", inference_error, flush=True)
+
+
+class AnalyzeRequest(BaseModel):
+    scan_id: str
+    image_path: str
+    patient_age_months: int = 84
+    patient_sex: str = "M"
 
 
 def verify_token(authorization: str = Header(...)):
@@ -38,20 +57,82 @@ def verify_token(authorization: str = Header(...)):
     return res.user
 
 
+def get_role(user_id):
+    """The account's role from public.profiles ('user' when there is no row)."""
+    rows = supabase.table("profiles").select("role").eq("id", user_id).limit(1).execute().data or []
+    if not rows:
+        return "user"
+    return rows[0].get("role") or "user"
+
+
 @app.get("/health")
 def health():
     supabase_error = supabase_probe.status()
+    models = inference.status() if inference else {"device": None, "bone_age_model": False, "bone_age_error": inference_error}
+    ready = supabase_error is None and inference is not None
     return {
-        "status": "ready" if supabase_error is None else "degraded",
+        "status": "ready" if ready else "degraded",
         "supabase": "ok" if supabase_error is None else "error",
         "supabase_error": supabase_error,
+        "models": "ok" if inference is not None else "error",
+        **models,
     }
 
 
 @app.get("/me")
 def me(user=Depends(verify_token)):
-    """Who the token belongs to; used by the mobile app to confirm its session."""
-    return {"id": user.id, "email": user.email}
+    """Who the token belongs to, and their role."""
+    return {"id": user.id, "email": user.email, "role": get_role(user.id)}
+
+
+@app.post("/analyze")
+def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
+    # Role check in code: only users analyse X-rays; admins use the website.
+    if get_role(user.id) != "user":
+        raise HTTPException(403, "Only user accounts can analyse X-rays")
+    if inference is None:
+        raise HTTPException(503, "AI models are not available on this server")
+    # Ownership checks (the service role key bypasses RLS, so we must check ourselves)
+    if not req.image_path.startswith(f"{user.id}/"):
+        raise HTTPException(403, "Not your image")
+    scan = (
+        supabase.table("scans").select("id")
+        .eq("id", req.scan_id).eq("user_id", user.id).execute()
+    )
+    if not scan.data:
+        raise HTTPException(403, "Scan not found")
+
+    started = time.monotonic()
+    try:
+        supabase.table("scans").update({"status": "analyzing"}).eq("id", req.scan_id).execute()
+
+        from PIL import Image
+        data = supabase.storage.from_("wrist-xrays").download(req.image_path)
+        image = Image.open(io.BytesIO(data)).convert("RGB")
+        w, h = image.size
+
+        raw_boxes = inference.detect_fractures(image)
+        bone_age = inference.predict_bone_age(image, req.patient_sex) if inference.bone_model is not None else None
+
+        payload, response = build_result(req.scan_id, raw_boxes, w, h, bone_age, req.patient_age_months)
+        # Also fill the table's original columns (user_id, fracture_confidence).
+        row = {**payload, "user_id": user.id, "fracture_confidence": payload["confidence"]}
+        supabase.table("analysis_results").upsert(row, on_conflict="scan_id").execute()
+    except Exception as e:
+        print(f"/analyze failed for scan {req.scan_id} after {time.monotonic() - started:.1f}s: "
+              f"{type(e).__name__}: {e}", flush=True)
+        supabase.table("scans").update({"status": "failed"}).eq("id", req.scan_id).execute()
+        raise HTTPException(500, str(e))
+
+    # The result is saved: the analysis succeeded even if the status update fails
+    # (the apps treat a scan with a saved result as completed).
+    try:
+        supabase.table("scans").update({"status": "completed"}).eq("id", req.scan_id).execute()
+    except Exception as e:
+        print(f"/analyze: result saved but status update failed for scan {req.scan_id}: "
+              f"{type(e).__name__}: {e}", flush=True)
+    print(f"/analyze ok for scan {req.scan_id} in {time.monotonic() - started:.1f}s", flush=True)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -59,5 +140,5 @@ def me(user=Depends(verify_token)):
 # ---------------------------------------------------------------------------
 from app.admin import build_admin_router, mount_admin_site
 
-app.include_router(build_admin_router(supabase, verify_token))
+app.include_router(build_admin_router(supabase, verify_token, get_role))
 mount_admin_site(app, os.environ.get("ADMIN_SITE_DIR", "/srv/admin_site"))

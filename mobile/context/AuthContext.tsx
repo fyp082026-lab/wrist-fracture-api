@@ -3,8 +3,9 @@
  *
  * - The session is persisted (Keychain / Keystore) and refreshed automatically,
  *   so users stay signed in between launches.
- * - Role-based access: administrator accounts are signed out of the app and
- *   sent to the admin website; only role 'user' can use the app.
+ * - Role-based access (decided here, in code, from profiles.role): administrator
+ *   accounts are signed out of the app and sent to the admin website; only
+ *   role 'user' can use the app.
  * - Email confirmation and password-reset links come back as deep links; the
  *   code in them is exchanged for a session here.
  */
@@ -93,14 +94,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
     } catch {
       // Profile problems never block using the app; Profile screen can retry.
-      setProfile((p) => p ?? { id: s.user.id, full_name: s.user.user_metadata?.full_name ?? null, organisation: null });
+      setProfile((p) => p ?? { id: s.user.id, full_name: s.user.user_metadata?.full_name ?? null, organisation: null, role: 'user' });
     }
   }, []);
 
   // Role-based access: only role 'user' may use the app.
   const checkRole = useCallback(
     async (s: Session) => {
-      const r = await getRole();
+      const r = await getRole(s.user.id);
       if (r === 'admin') {
         setLinkMessage(ADMIN_IN_APP_MESSAGE);
         await supabase.auth.signOut({ scope: 'local' });

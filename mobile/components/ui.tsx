@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONTS, LAYOUT, RADIUS, SPACING, TABULAR_NUMBERS } from '@/constants/theme';
+import { type ScanStatus, deriveFindingStatus } from '@/services/contract';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -231,6 +232,25 @@ export function Chip({ label, icon, tone }: { label: string; icon: IconName; ton
       <Text style={[styles.chipText, { color: c.text }]}>{label}</Text>
     </View>
   );
+}
+
+const STATUS: Record<ScanStatus, { label: string; icon: IconName; tone: Tone }> = {
+  completed: { label: 'Completed', icon: 'checkmark-circle', tone: 'intact' },
+  analyzing: { label: 'Analyzing', icon: 'sync', tone: 'info' },
+  uploaded: { label: 'Uploaded', icon: 'cloud-upload-outline', tone: 'neutral' },
+  failed: { label: 'Failed', icon: 'close-circle', tone: 'fracture' },
+};
+
+export function StatusChip({ status }: { status: ScanStatus }) {
+  return <Chip {...(STATUS[status] ?? STATUS.uploaded)} />;
+}
+
+/** AI-assisted wording only: never "diagnosis" or "confirmed". */
+export function FindingChip({ fracture, confidence }: { fracture: boolean; confidence: number | null }) {
+  const s = deriveFindingStatus(fracture, confidence);
+  if (s === 'no_fracture') return <Chip label="No fracture suggested" icon="shield-checkmark" tone="intact" />;
+  if (s === 'low_confidence') return <Chip label="Lower confidence, review carefully" icon="warning" tone="lowConfidence" />;
+  return <Chip label="Fracture suggested" icon="alert-circle" tone="fracture" />;
 }
 
 export const styles = StyleSheet.create({

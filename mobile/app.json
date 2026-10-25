@@ -2,7 +2,7 @@
   "expo": {
     "name": "PediaFracture AI",
     "slug": "pediafracture-ai",
-    "version": "2.1.0",
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "pediafracture",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.pediafracture.app",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#061426",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -40,6 +40,15 @@
         }
       ],
       "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "PediaFracture AI needs access to your photos so you can choose a wrist X-ray image for AI-assisted analysis.",
+          "cameraPermission": "PediaFracture AI needs the camera so you can photograph a wrist X-ray for AI-assisted analysis.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-image",
       "expo-secure-store"
     ],
     "experiments": {

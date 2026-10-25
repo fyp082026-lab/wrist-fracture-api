@@ -1,33 +1,57 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-const mockRpc = jest.fn<(fn: string) => Promise<{ data: unknown; error: unknown }>>();
-jest.mock('@/services/supabase', () => ({ supabase: { rpc: (fn: string) => mockRpc(fn) } }));
+type Res = { data: unknown; error: unknown };
+const mockResult = jest.fn<() => Promise<Res>>();
+const mockCalls: { table: string; columns: string; id: unknown }[] = [];
 
-import { getRole } from '@/services/account';
+jest.mock('@/services/supabase', () => ({
+  supabase: {
+    from: (table: string) => ({
+      select: (columns: string) => ({
+        eq: (_col: string, id: unknown) => ({
+          maybeSingle: () => {
+            mockCalls.push({ table, columns, id });
+            return mockResult();
+          },
+        }),
+      }),
+    }),
+  },
+}));
 
-describe('getRole (role-based access)', () => {
+import { getRole, roleFrom } from '@/services/account';
+
+describe('role-based access (decided in code from profiles.role)', () => {
   beforeEach(() => {
-    mockRpc.mockReset();
+    mockResult.mockReset();
+    mockCalls.length = 0;
   });
 
-  it('asks the database is_admin() function', async () => {
-    mockRpc.mockResolvedValue({ data: false, error: null });
-    await getRole();
-    expect(mockRpc).toHaveBeenCalledWith('is_admin');
+  it('reads the role column of the signed-in account', async () => {
+    mockResult.mockResolvedValue({ data: { role: 'user' }, error: null });
+    await getRole('u1');
+    expect(mockCalls).toEqual([{ table: 'profiles', columns: 'role', id: 'u1' }]);
   });
 
-  it('returns admin only when is_admin() is true', async () => {
-    mockRpc.mockResolvedValue({ data: true, error: null });
-    expect(await getRole()).toBe('admin');
+  it('admin only when the column says admin', async () => {
+    mockResult.mockResolvedValue({ data: { role: 'admin' }, error: null });
+    expect(await getRole('u1')).toBe('admin');
   });
 
-  it('returns user for a normal account', async () => {
-    mockRpc.mockResolvedValue({ data: false, error: null });
-    expect(await getRole()).toBe('user');
+  it('user for a normal account', async () => {
+    mockResult.mockResolvedValue({ data: { role: 'user' }, error: null });
+    expect(await getRole('u1')).toBe('user');
   });
 
-  it('does not lock users out when the check fails (e.g. offline)', async () => {
-    mockRpc.mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } });
-    expect(await getRole()).toBe('user');
+  it('user when the row is missing or the read fails (never locks a user out)', async () => {
+    mockResult.mockResolvedValue({ data: null, error: null });
+    expect(await getRole('u1')).toBe('user');
+    mockResult.mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } });
+    expect(await getRole('u1')).toBe('user');
+  });
+
+  it('only the exact value "admin" grants admin', () => {
+    expect(roleFrom('admin')).toBe('admin');
+    for (const v of ['Admin', 'ADMIN', 'user', '', null, undefined, 1]) expect(roleFrom(v)).toBe('user');
   });
 });
