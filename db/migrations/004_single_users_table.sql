@@ -131,7 +131,7 @@ update public.scans set status = 'completed' where status = 'done';
 alter table public.scans    drop constraint if exists scans_status_check;
 alter table public.patients drop constraint if exists patients_age_months_check;
 alter table public.patients drop constraint if exists patients_sex_check_v2;
-do $
+do $$
 begin
   if exists (select 1 from pg_constraint where conname = 'scans_status_check_v2') then
     alter table public.scans rename constraint scans_status_check_v2 to scans_status_check;
@@ -145,7 +145,7 @@ begin
     alter table public.patients add constraint patients_age_months_check
       check (age_months between 1 and 240) not valid;
   end if;
-end $;
+end $$;
 alter table public.scans    validate constraint scans_status_check;
 alter table public.patients validate constraint patients_age_months_check;
 
