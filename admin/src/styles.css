@@ -175,6 +175,7 @@ tr.clickable:hover td { background: var(--surface); }
 .kv { display: grid; grid-template-columns: 150px 1fr; gap: 8px 12px; margin: 0 0 16px; }
 .kv dt { color: var(--text-muted); }
 .kv dd { margin: 0; }
+.drawer-section { margin: 18px 0 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
 .disclaimer { color: var(--text-2); font-size: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
 
 .spinner {

@@ -96,14 +96,14 @@ class Table(Q):
         return self
 
 
-def test_saved_result_is_returned_even_if_status_update_fails(monkeypatch):
-    """The original bug: the result was stored, then marking the scan completed
-    was rejected by the database, and the user was told the analysis failed."""
+def fake_analysis_app(monkeypatch, reject_status=()):
+    """App with a fake database, storage and models; returns (client, db, calls)."""
     import io
     from PIL import Image
     main = load_app(monkeypatch, tokens)
     db = {"profiles": [{"id": k, "role": v} for k, v in PROFILES.items()],
-          "scans": [{"id": "s1", "user_id": "u1"}], "writes": [], "reject_status": {"completed"}}
+          "scans": [{"id": "s1", "user_id": "u1"}], "writes": [], "reject_status": set(reject_status)}
+    calls = []
     png = io.BytesIO()
     Image.new("RGB", (100, 80)).save(png, "PNG")
     monkeypatch.setattr(main, "supabase", SimpleNamespace(
@@ -112,10 +112,42 @@ def test_saved_result_is_returned_even_if_status_update_fails(monkeypatch):
         storage=SimpleNamespace(from_=lambda _b: SimpleNamespace(download=lambda _p: png.getvalue())),
     ))
     monkeypatch.setattr(main, "inference", SimpleNamespace(
-        detect_fractures=lambda _img: [(0.9, 10, 10, 50, 40)], bone_model=None))
-    c = TestClient(main.app)
+        detect_fractures=lambda _img: calls.append("yolo") or [(0.9, 10, 10, 50, 40)],
+        predict_bone_age=lambda _img, _sex: calls.append("bone") or 97.4,
+        bone_model=object()))
+    return TestClient(main.app), db, calls
+
+
+def analyze(c, mode=None):
     body = {"scan_id": "s1", "image_path": "u1/s1.jpg", "patient_age_months": 96, "patient_sex": "M"}
-    r = c.post("/analyze", json=body, headers={"Authorization": "Bearer user-token"})
+    if mode:
+        body["analysis_mode"] = mode
+    return c.post("/analyze", json=body, headers={"Authorization": "Bearer user-token"})
+
+
+def test_each_mode_runs_only_its_models(monkeypatch):
+    for mode, expected in [("fracture", ["yolo"]), ("bone_age", ["bone"]), ("both", ["yolo", "bone"]), (None, ["yolo", "bone"])]:
+        c, db, calls = fake_analysis_app(monkeypatch)
+        r = analyze(c, mode)
+        assert r.status_code == 200, (mode, r.text)
+        assert calls == expected, mode
+        body = r.json()
+        assert body["analysis_mode"] == (mode or "both")
+        assert (body["fracture_detected"] is None) == (mode == "bone_age")
+        assert (body["bone_age_months"] is None) == (mode == "fracture")
+        assert ("scans", {"status": "analyzing", "analysis_mode": mode or "both"}) in db["writes"]
+
+
+def test_unknown_mode_is_rejected(monkeypatch):
+    c, _, calls = fake_analysis_app(monkeypatch)
+    assert analyze(c, "fusion").status_code == 422 and calls == []
+
+
+def test_saved_result_is_returned_even_if_status_update_fails(monkeypatch):
+    """The original bug: the result was stored, then marking the scan completed
+    was rejected by the database, and the user was told the analysis failed."""
+    c, db, _ = fake_analysis_app(monkeypatch, reject_status={"completed"})
+    r = analyze(c)
     assert r.status_code == 200 and r.json()["fracture_detected"] is True
     assert any(t == "analysis_results" for t, _ in db["writes"])
     assert ("scans", {"status": "failed"}) not in db["writes"]

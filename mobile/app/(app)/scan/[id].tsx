@@ -1,10 +1,16 @@
 import { useCallback, useState } from 'react';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SPACING } from '@/constants/theme';
 import { Banner, Button, Card, FindingChip, Header, Loading, Row, Screen, StatusChip, styles as ui } from '@/components/ui';
 import { XrayView } from '@/components/XrayView';
-import { DEFAULT_CLINICAL_DISCLAIMER, formatAgeMonths } from '@/services/contract';
+import {
+  ANALYSIS_MODE_INFO,
+  DEFAULT_CLINICAL_DISCLAIMER,
+  formatAgeMonths,
+  runsBoneAge,
+  runsFracture,
+} from '@/services/contract';
 import { formatFullScanDate } from '@/services/format';
 import { getScanRecord, type ScanRecord } from '@/services/records';
 
@@ -64,50 +70,67 @@ export default function ScanResult() {
 
       <XrayView uri={record.imageUrl} detections={r?.detections ?? []} />
 
-      <Card style={{ marginTop: SPACING.base, marginBottom: SPACING.base, gap: SPACING.sm }}>
-        <Text style={ui.label}>AI-ASSISTED FINDING</Text>
-        {record.status === 'completed' && r ? (
-          <>
-            <FindingChip fracture={r.fracture_detected} confidence={r.confidence} />
-            <Text style={ui.body}>
-              {r.fracture_detected
-                ? `The model suggests ${r.detections.length} possible fracture region${r.detections.length === 1 ? '' : 's'}, highlighted on the image.`
-                : 'The model did not suggest a fracture on this image.'}
-            </Text>
-          </>
-        ) : record.status === 'completed' ? (
-          <>
-            <StatusChip status="completed" />
-            <Text style={ui.body}>
-              {record.resultUnreadable
-                ? 'The analysis finished and was saved, but this result could not be displayed. Pull down to retry; if it persists, contact the administrator.'
-                : 'The analysis finished, but its result is not available yet. Pull down to refresh.'}
-            </Text>
-          </>
-        ) : record.status === 'failed' ? (
-          <>
-            <StatusChip status="failed" />
-            <Text style={ui.body}>The analysis did not complete. Start a new scan with this X-ray to try again.</Text>
-          </>
-        ) : (
-          <>
-            <StatusChip status={record.status} />
-            <Text style={ui.body}>The server is still working on this scan. This page updates automatically.</Text>
-          </>
-        )}
-      </Card>
+      {record.status === 'completed' && r ? (
+        <>
+          <Card style={styles.section}>
+            <Text style={ui.label}>FRACTURE DETECTION · {ANALYSIS_MODE_INFO.fracture.model.toUpperCase()}</Text>
+            {runsFracture(r.analysis_mode) ? (
+              <>
+                <FindingChip fracture={r.fracture_detected} confidence={r.confidence} />
+                <Text style={ui.body}>
+                  {r.fracture_detected
+                    ? `The model suggests ${r.detections.length} possible fracture region${r.detections.length === 1 ? '' : 's'}, highlighted on the image.`
+                    : 'The model did not suggest a fracture on this image.'}
+                </Text>
+                <Row label="Top confidence" value={r.confidence != null ? `${Math.round(r.confidence * 100)}%` : 'Not available'} />
+              </>
+            ) : (
+              <NotRun />
+            )}
+          </Card>
 
-      {r ? (
-        <Card style={{ marginBottom: SPACING.base }}>
-          <Row label="Top confidence" value={r.confidence != null ? `${Math.round(r.confidence * 100)}%` : 'Not available'} />
-          <Row label="Estimated bone age" value={boneAge != null ? formatAgeMonths(boneAge) : 'Not available'} />
-          {ageDiff != null ? (
-            <Row label="Bone age vs. actual age" value={ageDiff === 0 ? 'Same' : `${ageDiff > 0 ? '+' : '−'}${formatAgeMonths(Math.abs(ageDiff))}`} />
-          ) : null}
+          <Card style={styles.section}>
+            <Text style={ui.label}>BONE AGE · {ANALYSIS_MODE_INFO.bone_age.model.toUpperCase()}</Text>
+            {runsBoneAge(r.analysis_mode) ? (
+              <>
+                <Row label="Estimated bone age" value={boneAge != null ? formatAgeMonths(boneAge) : 'Not available'} />
+                <Row label="Actual age" value={p ? formatAgeMonths(p.age_months) : 'Unknown'} />
+                {ageDiff != null ? (
+                  <Row label="Bone age vs. actual age" value={ageDiff === 0 ? 'Same' : `${ageDiff > 0 ? '+' : '−'}${formatAgeMonths(Math.abs(ageDiff))}`} />
+                ) : null}
+              </>
+            ) : (
+              <NotRun />
+            )}
+          </Card>
+        </>
+      ) : (
+        <Card style={styles.section}>
+          <Text style={ui.label}>{ANALYSIS_MODE_INFO[record.mode].title.toUpperCase()}</Text>
+          {record.status === 'completed' ? (
+            <>
+              <StatusChip status="completed" />
+              <Text style={ui.body}>
+                {record.resultUnreadable
+                  ? 'The analysis finished and was saved, but this result could not be displayed. Pull down to retry; if it persists, contact the administrator.'
+                  : 'The analysis finished, but its result is not available yet. Pull down to refresh.'}
+              </Text>
+            </>
+          ) : record.status === 'failed' ? (
+            <>
+              <StatusChip status="failed" />
+              <Text style={ui.body}>The analysis did not complete. Start a new scan with this X-ray to try again.</Text>
+            </>
+          ) : (
+            <>
+              <StatusChip status={record.status} />
+              <Text style={ui.body}>The server is still working on this scan. This page updates automatically.</Text>
+            </>
+          )}
         </Card>
-      ) : null}
+      )}
 
-      <Card style={{ marginBottom: SPACING.lg }}>
+      <Card style={{ marginTop: SPACING.base, marginBottom: SPACING.lg }}>
         <Row label="Patient code" value={p?.patient_code || 'None'} />
         <Row label="Age" value={p ? formatAgeMonths(p.age_months) : 'Unknown'} />
         <Row label="Sex" value={p ? (p.sex === 'F' ? 'Female' : 'Male') : 'Unknown'} />
@@ -121,3 +144,11 @@ export default function ScanResult() {
     </Screen>
   );
 }
+
+function NotRun() {
+  return <Text style={ui.body}>Not run for this scan. Choose this option on a new scan to include it.</Text>;
+}
+
+const styles = StyleSheet.create({
+  section: { marginTop: SPACING.base, gap: SPACING.sm },
+});

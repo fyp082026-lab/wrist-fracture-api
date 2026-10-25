@@ -2,7 +2,7 @@
   "expo": {
     "name": "PediaFracture AI",
     "slug": "pediafracture-ai",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "pediafracture",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.pediafracture.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#061426",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

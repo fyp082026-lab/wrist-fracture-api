@@ -6,6 +6,7 @@ import { effectiveStatus, summarize, type ScanListItem } from '@/services/record
 const scan = (status: ScanListItem['status'], fracture?: boolean): ScanListItem => ({
   id: Math.random().toString(36),
   status,
+  mode: 'both',
   created_at: '2026-10-17T10:00:00Z',
   image_path: 'u/s.jpg',
   patient: null,
