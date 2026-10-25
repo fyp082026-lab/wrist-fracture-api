@@ -35,6 +35,18 @@ except Exception as e:  # tests and machines without the ML packages
     print("AI models not loaded:", inference_error, flush=True)
 
 
+# Smaller images (thumbnails, screenshots) lack the bone detail the models need.
+MIN_SHORT_EDGE_PX = 512
+
+
+class ImageTooSmall(Exception):
+    def __init__(self, width, height):
+        super().__init__(
+            f"This image is only {width} x {height} px, too small for an accurate analysis "
+            f"(at least {MIN_SHORT_EDGE_PX} px on the short side is needed). Use the original X-ray."
+        )
+
+
 class AnalyzeRequest(BaseModel):
     scan_id: str
     image_path: str
@@ -120,6 +132,8 @@ def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
         data = supabase.storage.from_("wrist-xrays").download(req.image_path)
         image = Image.open(io.BytesIO(data)).convert("RGB")
         w, h = image.size
+        if min(w, h) < MIN_SHORT_EDGE_PX:
+            raise ImageTooSmall(w, h)
 
         # Only the models the user chose are run.
         raw_boxes = inference.detect_fractures(image) if run["fracture"] else None
@@ -134,6 +148,10 @@ def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
         # Also fill the table's original columns (user_id, fracture_confidence).
         row = {**payload, "user_id": user.id, "fracture_confidence": payload["confidence"]}
         supabase.table("analysis_results").upsert(row, on_conflict="scan_id").execute()
+    except ImageTooSmall as e:
+        # Same rule as the app (older app versions do not check): a clear 422, not a crash.
+        supabase.table("scans").update({"status": "failed"}).eq("id", req.scan_id).execute()
+        raise HTTPException(422, str(e))
     except Exception as e:
         print(f"/analyze failed for scan {req.scan_id} after {time.monotonic() - started:.1f}s: "
               f"{type(e).__name__}: {e}", flush=True)

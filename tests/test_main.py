@@ -96,7 +96,7 @@ class Table(Q):
         return self
 
 
-def fake_analysis_app(monkeypatch, reject_status=()):
+def fake_analysis_app(monkeypatch, reject_status=(), size=(600, 800)):
     """App with a fake database, storage and models; returns (client, db, calls)."""
     import io
     from PIL import Image
@@ -105,7 +105,7 @@ def fake_analysis_app(monkeypatch, reject_status=()):
           "scans": [{"id": "s1", "user_id": "u1"}], "writes": [], "reject_status": set(reject_status)}
     calls = []
     png = io.BytesIO()
-    Image.new("RGB", (100, 80)).save(png, "PNG")
+    Image.new("RGB", size).save(png, "PNG")
     monkeypatch.setattr(main, "supabase", SimpleNamespace(
         auth=main.supabase.auth,
         table=lambda name: Table(name, db),
@@ -151,3 +151,12 @@ def test_saved_result_is_returned_even_if_status_update_fails(monkeypatch):
     assert r.status_code == 200 and r.json()["fracture_detected"] is True
     assert any(t == "analysis_results" for t, _ in db["writes"])
     assert ("scans", {"status": "failed"}) not in db["writes"]
+
+
+def test_too_small_image_is_refused_before_any_model_runs(monkeypatch):
+    c, db, calls = fake_analysis_app(monkeypatch, size=(300, 400))
+    r = analyze(c)
+    assert r.status_code == 422 and "too small" in r.json()["detail"]
+    assert calls == []
+    assert ("scans", {"status": "failed"}) in db["writes"]
+    assert not any(t == "analysis_results" for t, _ in db["writes"])

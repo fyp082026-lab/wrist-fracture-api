@@ -101,6 +101,8 @@ const MESSAGES = {
   recordFailed: 'Could not save the scan record. Please try again.',
   imageMissing: 'The X-ray for this scan was never uploaded. Please select the image again.',
   uploadFailed: 'Could not upload the X-ray. Please check your connection and try again.',
+  imageTooSmall:
+    'This image is too small for an accurate analysis (at least 512 px on the short side is needed). Use the original X-ray, not a thumbnail or screenshot.',
 } as const;
 
 export function newScanId(): string {
@@ -452,6 +454,10 @@ async function interpretResponse(response: Response, scanId: string): Promise<An
   }
   if (response.status === 503) {
     throw new AnalysisServiceError('server_unreachable', MESSAGES.serverMisconfigured);
+  }
+  if (response.status === 422) {
+    // The only 422 the server sends for a valid request: the image is too small.
+    throw new AnalysisServiceError('invalid_image', MESSAGES.imageTooSmall);
   }
   if (!response.ok) {
     // 500 and anything unexpected. Server error text is never shown to the user.

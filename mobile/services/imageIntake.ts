@@ -1,16 +1,21 @@
 /**
  * X-ray image intake rules (see .planning/CONTRACT.md §4):
- * reject non-images and originals over 20 MB, and re-encode to JPEG with the
- * long edge at most 2048 px before upload.
+ * reject non-images, originals over 20 MB and images under 512 px on the short
+ * side, and re-encode to JPEG with the long edge at most 2048 px before upload.
  */
 import { Image as ExpoImage } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 
 export const MAX_ORIGINAL_BYTES = 20 * 1024 * 1024;
 export const MAX_UPLOAD_EDGE_PX = 2048;
+/**
+ * Smaller images (thumbnails, screenshots of a web page) lack the bone detail
+ * the models need: bone age is estimated at 384 px and fractures at 640 px.
+ */
+export const MIN_SHORT_EDGE_PX = 512;
 const JPEG_QUALITY = 0.9;
 
-export type ImageIntakeProblem = 'not_image' | 'too_large' | 'unreadable';
+export type ImageIntakeProblem = 'not_image' | 'too_large' | 'too_small' | 'unreadable';
 
 export class ImageIntakeError extends Error {
   problem: ImageIntakeProblem;
@@ -26,6 +31,16 @@ function formatMegabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** A message when the image is too small for an accurate analysis, else null. */
+export function checkImageSize(width: number | null | undefined, height: number | null | undefined): string | null {
+  if (!width || !height || width <= 0 || height <= 0) return null; // unknown: checked again when decoded
+  if (Math.min(width, height) >= MIN_SHORT_EDGE_PX) return null;
+  return (
+    `This image is only ${Math.round(width)} × ${Math.round(height)} px, too small for an accurate analysis ` +
+    `(at least ${MIN_SHORT_EDGE_PX} px on the short side is needed). Use the original X-ray, not a thumbnail or screenshot.`
+  );
+}
+
 /**
  * Checks picker metadata. Fields the platform did not provide are skipped;
  * an unreadable file is still caught when it is decoded for upload.
@@ -35,6 +50,8 @@ export function checkPickedAsset(asset: {
   type?: string | null;
   mimeType?: string | null;
   fileSize?: number | null;
+  width?: number | null;
+  height?: number | null;
 }): string | null {
   if (asset.type && asset.type !== 'image') {
     return 'This file is not an image. Please choose a wrist X-ray photo.';
@@ -47,7 +64,7 @@ export function checkPickedAsset(asset: {
       MAX_ORIGINAL_BYTES
     )}. Please choose a smaller file.`;
   }
-  return null;
+  return checkImageSize(asset.width, asset.height);
 }
 
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -129,6 +146,14 @@ export async function prepareImageForUpload(
         ? `This file could not be read as an image (${reason}).`
         : 'This file could not be read as an image. Please choose a different X-ray photo.'
     );
+  }
+
+  const tooSmall = checkImageSize(rendered.width, rendered.height);
+  if (tooSmall) {
+    releaseRef(rendered);
+    releaseRef(context);
+    decoded.release();
+    throw new ImageIntakeError('too_small', tooSmall);
   }
 
   try {
