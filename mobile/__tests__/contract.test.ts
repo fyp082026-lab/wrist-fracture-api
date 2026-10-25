@@ -6,6 +6,7 @@ import {
   formatAgeMonths,
   parseAnalysisResultRow,
   parseAnalyzeResponse,
+  toAnalysisMode,
 } from '@/services/contract';
 
 const valid = {
@@ -161,5 +162,33 @@ describe('formatAgeMonths', () => {
   it('floors fractional months', () => {
     expect(formatAgeMonths(97.4)).toBe('8y 1m');
     expect(formatAgeMonths(100)).toBe('8y 4m');
+  });
+});
+
+describe('analysis modes', () => {
+  it('reads a bone-age-only result: fracture not checked, never "no fracture"', () => {
+    const parsed = parseAnalyzeResponse({
+      ...valid, analysis_mode: 'bone_age', fracture_detected: null, confidence: null, detections: [],
+    });
+    expect(parsed.analysis_mode).toBe('bone_age');
+    expect(parsed.fracture_detected).toBeNull();
+    expect(parsed.bone_age_months).toBe(97.4);
+  });
+
+  it('reads a fracture-only result', () => {
+    const parsed = parseAnalyzeResponse({ ...valid, analysis_mode: 'fracture', bone_age_months: null });
+    expect(parsed.fracture_detected).toBe(true);
+    expect(parsed.bone_age_months).toBeNull();
+  });
+
+  it('still requires a fracture answer when fracture detection ran', () => {
+    expect(rejectedField({ ...valid, analysis_mode: 'fracture', fracture_detected: null })).toBe('fracture_detected');
+    expect(rejectedField({ ...valid, fracture_detected: null })).toBe('fracture_detected');
+  });
+
+  it('treats results saved before modes existed as both models', () => {
+    const row = parseAnalysisResultRow({ scan_id: 's1', fracture_detected: false, bone_age_months: 100 });
+    expect(row.analysis_mode).toBe('both');
+    expect(toAnalysisMode('fusion')).toBe('both');
   });
 });

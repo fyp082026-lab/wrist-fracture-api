@@ -14,13 +14,26 @@ import {
   runAnalysisPipeline,
   validatePatient,
 } from '@/services/analysis';
-import type { PatientSex } from '@/services/contract';
+import {
+  ANALYSIS_MODES,
+  ANALYSIS_MODE_INFO,
+  DEFAULT_ANALYSIS_MODE,
+  runsBoneAge,
+  type AnalysisMode,
+  type PatientSex,
+} from '@/services/contract';
 
 type Stage = 'idle' | 'uploading' | 'analyzing';
 
 const STAGE_TEXT: Record<Exclude<Stage, 'idle'>, string> = {
   uploading: 'Uploading X-ray securely…',
   analyzing: 'AI is analysing the X-ray. This can take up to a minute…',
+};
+
+const MODE_ICON: Record<AnalysisMode, keyof typeof Ionicons.glyphMap> = {
+  fracture: 'scan-outline',
+  bone_age: 'body-outline',
+  both: 'layers-outline',
 };
 
 export default function NewScan() {
@@ -30,6 +43,7 @@ export default function NewScan() {
   const [years, setYears] = useState('');
   const [months, setMonths] = useState('');
   const [sex, setSex] = useState<PatientSex | null>(null);
+  const [mode, setMode] = useState<AnalysisMode>(DEFAULT_ANALYSIS_MODE);
   const [stage, setStage] = useState<Stage>('idle');
   const [error, setError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -96,6 +110,7 @@ export default function NewScan() {
         scanId: scanId.current,
         imageUri,
         patient: { ageMonths, sex: sex!, code: code.trim() || undefined },
+        mode,
         onProgress: (s) => setStage(s),
         signal: abort.current.signal,
       });
@@ -172,7 +187,46 @@ export default function NewScan() {
             </Pressable>
           ))}
         </View>
-        <Text style={[ui.hint, { marginTop: SPACING.sm }]}>Age and sex are used by the bone age model.</Text>
+        <Text style={[ui.hint, { marginTop: SPACING.sm }]}>
+          {runsBoneAge(mode) ? 'Age and sex are used by the bone age model.' : 'Age and sex are saved with the scan.'}
+        </Text>
+      </Card>
+
+      <Card style={{ marginBottom: SPACING.lg }}>
+        <Text style={[ui.h2, { marginBottom: SPACING.md }]}>3 · AI analysis</Text>
+        <View style={{ gap: SPACING.sm }} accessibilityRole="radiogroup">
+          {ANALYSIS_MODES.map((m) => (
+            <Pressable
+              key={m}
+              disabled={busy}
+              onPress={() => {
+                setMode(m);
+                // A different choice is a different scan, not a retry of the last one.
+                if (m !== mode) {
+                  scanId.current = null;
+                  setAttempted(false);
+                }
+              }}
+              style={[styles.mode, mode === m && styles.segmentOn]}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: mode === m, disabled: busy }}
+              accessibilityLabel={`${ANALYSIS_MODE_INFO[m].title}, ${ANALYSIS_MODE_INFO[m].model}`}>
+              <Ionicons name={MODE_ICON[m]} size={22} color={mode === m ? COLORS.primaryBright : COLORS.textMuted} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modeTitle, mode === m && { color: COLORS.textPrimary }]}>{ANALYSIS_MODE_INFO[m].title}</Text>
+                <Text style={styles.modeText}>{ANALYSIS_MODE_INFO[m].model} · {ANALYSIS_MODE_INFO[m].description}</Text>
+              </View>
+              <Ionicons name={mode === m ? 'radio-button-on' : 'radio-button-off'} size={18} color={mode === m ? COLORS.primaryBright : COLORS.textMuted} />
+            </Pressable>
+          ))}
+          <View style={[styles.mode, styles.modeSoon]} accessibilityLabel="Fusion AI, coming soon" accessible>
+            <Ionicons name="git-merge-outline" size={22} color={COLORS.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modeTitle}>Fusion AI · coming soon</Text>
+              <Text style={styles.modeText}>Bone-age-aware fracture type (growth plate or shaft).</Text>
+            </View>
+          </View>
+        </View>
       </Card>
 
       {busy ? (
@@ -230,6 +284,13 @@ const styles = StyleSheet.create({
   },
   segmentOn: { borderColor: COLORS.primaryBright, backgroundColor: COLORS.primaryMutedBg },
   segmentText: { fontFamily: FONTS.medium, fontSize: 14, color: COLORS.textSecondary },
+  mode: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md, minHeight: 56, padding: SPACING.md,
+    borderRadius: RADIUS.lg, borderWidth: 1.5, borderColor: COLORS.surfaceBorderHigh, backgroundColor: COLORS.surfaceLowest,
+  },
+  modeSoon: { borderStyle: 'dashed', opacity: 0.6 },
+  modeTitle: { fontFamily: FONTS.semibold, fontSize: 14, color: COLORS.textSecondary },
+  modeText: { fontFamily: FONTS.regular, fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
   progress: { gap: SPACING.md, borderColor: COLORS.primaryMutedBorder },
   steps: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.md, marginVertical: SPACING.sm },
   stepLine: { width: 60, height: 2, backgroundColor: COLORS.surfaceBorderHigh, marginBottom: 18 },

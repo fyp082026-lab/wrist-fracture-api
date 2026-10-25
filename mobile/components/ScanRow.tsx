@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COLORS, FONTS, RADIUS, SPACING, TABULAR_NUMBERS } from '@/constants/theme';
 import { FindingChip, StatusChip } from '@/components/ui';
-import { formatAgeMonths } from '@/services/contract';
+import { ANALYSIS_MODE_INFO, formatAgeMonths, runsFracture } from '@/services/contract';
 import { formatFullScanDate } from '@/services/format';
 import type { ScanListItem } from '@/services/records';
 
@@ -26,8 +26,13 @@ export function ScanRow({ item }: { item: ScanListItem }) {
         </View>
         <Text style={[styles.meta, TABULAR_NUMBERS]}>
           {p ? `${formatAgeMonths(p.age_months)} · ${p.sex === 'F' ? 'Female' : 'Male'}` : 'Patient details unavailable'}
+          {` · ${ANALYSIS_MODE_INFO[item.mode].title}`}
         </Text>
-        {item.status === 'completed' && item.result ? (
+        {item.status === 'completed' && item.result && !runsFracture(item.mode) ? (
+          <Text style={[styles.meta, TABULAR_NUMBERS]}>
+            Bone age {item.result.bone_age_months != null ? formatAgeMonths(item.result.bone_age_months) : 'not available'}
+          </Text>
+        ) : item.status === 'completed' && item.result ? (
           <FindingChip fracture={item.result.fracture_detected} confidence={item.result.confidence} />
         ) : (
           <StatusChip status={item.status} />

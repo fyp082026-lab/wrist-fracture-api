@@ -29,6 +29,46 @@ export type PatientSex = 'M' | 'F';
 export type FractureType = 'Growth-Plate' | 'Shaft';
 /** `scans.status` values. The server owns `analyzing` and `completed`. */
 export type ScanStatus = 'uploaded' | 'analyzing' | 'completed' | 'failed';
+/**
+ * Which AI models a scan runs: fracture detection (YOLOv8, Module B), bone age
+ * (EfficientNet, Module C), or both. The fusion model (Module D) is not trained yet.
+ */
+export type AnalysisMode = 'fracture' | 'bone_age' | 'both';
+export const ANALYSIS_MODES: readonly AnalysisMode[] = ['fracture', 'bone_age', 'both'];
+export const DEFAULT_ANALYSIS_MODE: AnalysisMode = 'both';
+
+export function runsFracture(mode: AnalysisMode): boolean {
+  return mode !== 'bone_age';
+}
+
+export function runsBoneAge(mode: AnalysisMode): boolean {
+  return mode !== 'fracture';
+}
+
+/** User-facing names, shared by the scan form, results and history. */
+export const ANALYSIS_MODE_INFO: Record<AnalysisMode, { title: string; model: string; description: string }> = {
+  fracture: {
+    title: 'Fracture detection',
+    model: 'YOLOv8',
+    description: 'Finds and boxes possible fractures.',
+  },
+  bone_age: {
+    title: 'Bone age',
+    model: 'EfficientNet-B3',
+    description: 'Estimates skeletal age from the X-ray, sex and age.',
+  },
+  both: {
+    title: 'Fracture + bone age',
+    model: 'YOLOv8 + EfficientNet-B3',
+    description: 'Runs both models on the same X-ray.',
+  },
+};
+
+/** Rows saved before modes existed ran both models. */
+export function toAnalysisMode(value: unknown): AnalysisMode {
+  return ANALYSIS_MODES.includes(value as AnalysisMode) ? (value as AnalysisMode) : DEFAULT_ANALYSIS_MODE;
+}
+
 /** Display classification derived from a completed result. */
 export type FindingStatus = 'fracture_detected' | 'no_fracture' | 'low_confidence';
 
@@ -46,12 +86,15 @@ export interface AnalyzeRequest {
   image_path: string;
   patient_age_months: number;
   patient_sex: PatientSex;
+  analysis_mode: AnalysisMode;
 }
 
 export interface AnalyzeResponse {
   scan_id: string;
   status: 'completed';
-  fracture_detected: boolean;
+  analysis_mode: AnalysisMode;
+  /** null when fracture detection was not run (bone age only). */
+  fracture_detected: boolean | null;
   fracture_type: FractureType | null;
   confidence: number | null;
   detections: Detection[];
@@ -65,7 +108,9 @@ export interface AnalyzeResponse {
 /** Row of `analysis_results` as read by the client (never written by it). */
 export interface AnalysisResultRow {
   scan_id: string;
-  fracture_detected: boolean;
+  analysis_mode: AnalysisMode;
+  /** null when fracture detection was not run (bone age only). */
+  fracture_detected: boolean | null;
   fracture_type: FractureType | null;
   confidence: number | null;
   detections: Detection[];
@@ -119,10 +164,15 @@ function nullableString(obj: Json, key: string, path: string): string | null {
   return v;
 }
 
-function requireBoolean(obj: Json, key: string, path: string): boolean {
-  const v = obj[key];
-  if (typeof v !== 'boolean') throw new ContractError(path + key, 'must be a boolean');
-  return v;
+/**
+ * A boolean, or null when the model that produces it was not run. A missing
+ * value is only accepted for that model's "not run" case.
+ */
+function fractureFinding(obj: Json, path: string, mode: AnalysisMode): boolean | null {
+  const v = obj.fracture_detected;
+  if (typeof v === 'boolean') return runsFracture(mode) ? v : null;
+  if ((v === null || v === undefined) && !runsFracture(mode)) return null;
+  throw new ContractError(path + 'fracture_detected', 'must be a boolean');
 }
 
 /** Accepts finite numbers, or numeric strings (Postgres NUMERIC can arrive as text). */
@@ -238,10 +288,12 @@ export function parseAnalyzeResponse(json: unknown, expectedScanId?: string): An
     throw new ContractError('detections', 'must be an array');
   }
 
+  const analysis_mode = toAnalysisMode(obj.analysis_mode);
   return {
     scan_id,
     status: 'completed',
-    fracture_detected: requireBoolean(obj, 'fracture_detected', ''),
+    analysis_mode,
+    fracture_detected: fractureFinding(obj, '', analysis_mode),
     fracture_type: parseFractureType(obj, ''),
     confidence: nullableNumber(obj, 'confidence', '', { min: 0, max: 1 }),
     detections: parseDetections(obj.detections ?? []),
@@ -261,9 +313,11 @@ export function parseAnalysisResultRow(row: unknown): AnalysisResultRow {
   const rawConfidence = obj.confidence ?? obj.fracture_confidence;
   const rawGradCam = obj.grad_cam_path ?? obj.gradcam_path;
 
+  const analysis_mode = toAnalysisMode(obj.analysis_mode);
   return {
     scan_id: requireString(obj, 'scan_id', p),
-    fracture_detected: requireBoolean(obj, 'fracture_detected', p),
+    analysis_mode,
+    fracture_detected: fractureFinding(obj, p, analysis_mode),
     fracture_type: parseFractureType(obj, p),
     confidence: nullableNumber({ confidence: rawConfidence }, 'confidence', p, { min: 0, max: 1 }),
     detections: parseDetections(obj.detections, `${p}detections`),

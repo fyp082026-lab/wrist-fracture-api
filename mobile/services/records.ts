@@ -1,15 +1,17 @@
 /**
- * Read-side data for the clinician's own records. Row Level Security limits
+ * Read-side data for the user's own records. Row Level Security limits
  * every query to the signed-in user; separate queries are merged here so the
  * app does not depend on PostgREST foreign-key embedding.
  */
 import { supabase } from '@/services/supabase';
 import {
+  type AnalysisMode,
   type AnalysisResultRow,
   type PatientSex,
   type ScanStatus,
   STORAGE_BUCKET,
   parseAnalysisResultRow,
+  toAnalysisMode,
 } from '@/services/contract';
 
 const SIGNED_URL_SECONDS = 60 * 30;
@@ -24,6 +26,8 @@ export interface PatientSummary {
 export interface ScanListItem {
   id: string;
   status: ScanStatus;
+  /** Which models the scan ran: fracture detection, bone age, or both. */
+  mode: AnalysisMode;
   created_at: string;
   image_path: string;
   patient: PatientSummary | null;
@@ -66,7 +70,7 @@ export function effectiveStatus(status: string, hasResult: boolean): ScanStatus 
 export async function listScans(limit = 100): Promise<ScanListItem[]> {
   const { data: scans, error } = await supabase
     .from('scans')
-    .select('id, status, created_at, image_path, patient_id')
+    .select('id, status, analysis_mode, created_at, image_path, patient_id')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) fail(error, 'Could not load your scans.');
@@ -86,6 +90,7 @@ export async function listScans(limit = 100): Promise<ScanListItem[]> {
   return rows.map((r) => ({
     id: r.id,
     status: effectiveStatus(r.status, resultMap.has(r.id)),
+    mode: toAnalysisMode(r.analysis_mode),
     created_at: r.created_at,
     image_path: r.image_path,
     patient: r.patient_id ? patients.get(r.patient_id) ?? null : null,
@@ -96,7 +101,7 @@ export async function listScans(limit = 100): Promise<ScanListItem[]> {
 export async function getScanRecord(scanId: string): Promise<ScanRecord> {
   const { data: scan, error } = await supabase
     .from('scans')
-    .select('id, status, created_at, image_path, patient_id')
+    .select('id, status, analysis_mode, created_at, image_path, patient_id')
     .eq('id', scanId)
     .maybeSingle();
   if (error) fail(error, 'Could not load this scan.');
@@ -129,6 +134,7 @@ export async function getScanRecord(scanId: string): Promise<ScanRecord> {
   return {
     id: scan.id,
     status: effectiveStatus(scan.status, Boolean(row)),
+    mode: toAnalysisMode(scan.analysis_mode),
     created_at: scan.created_at,
     image_path: scan.image_path,
     patient: scan.patient_id ? patients.get(scan.patient_id) ?? null : null,

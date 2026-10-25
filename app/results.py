@@ -49,13 +49,27 @@ def fmt_months(months):
     return f"{m // 12}y {m % 12}m"
 
 
-def build_result(scan_id, raw_boxes, width, height, bone_age, patient_age_months):
-    """Returns (row for analysis_results, API response)."""
-    detections, top = normalize_boxes(raw_boxes, width, height)
-    age = safe_bone_age(bone_age)
+# Which models run for each analysis mode.
+MODES = {
+    "fracture": {"fracture": True, "bone_age": False},
+    "bone_age": {"fracture": False, "bone_age": True},
+    "both": {"fracture": True, "bone_age": True},
+}
+
+
+def build_result(scan_id, raw_boxes, width, height, bone_age, patient_age_months, mode="both"):
+    """Returns (row for analysis_results, API response).
+
+    raw_boxes is None when fracture detection was not run (mode "bone_age"):
+    fracture_detected is then None, meaning "not checked", never "no fracture".
+    """
+    ran_fracture = raw_boxes is not None
+    detections, top = normalize_boxes(raw_boxes or [], width, height)
+    age = safe_bone_age(bone_age) if MODES[mode]["bone_age"] else None
     payload = {
         "scan_id": scan_id,
-        "fracture_detected": bool(detections),
+        "analysis_mode": mode,
+        "fracture_detected": bool(detections) if ran_fracture else None,
         "fracture_type": None,  # no fracture-typing model yet
         "confidence": top,
         "detections": detections,

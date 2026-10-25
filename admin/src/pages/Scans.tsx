@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, formatMonths, relativeTime, type ScanRow, type ScanStatus } from '../api';
+import { MODE_LABEL, api, formatMonths, relativeTime, runsBoneAge, runsFracture, type ScanRow, type ScanStatus } from '../api';
 import { FindingPill, StatusPill } from '../components/Pills';
 import { ScanDrawer } from '../components/ScanDrawer';
 
@@ -69,7 +69,7 @@ export function Scans({
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>When</th><th>User</th><th>Patient</th><th>Status</th><th>AI-assisted finding</th><th>Bone age</th></tr>
+              <tr><th>When</th><th>User</th><th>Patient</th><th>Analysis</th><th>Status</th><th>Fracture detection</th><th>Bone age</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
@@ -87,9 +87,13 @@ export function Scans({
                       {r.patient_age_months != null ? formatMonths(r.patient_age_months) : '?'} · {r.patient_sex ?? '?'}
                     </div>
                   </td>
+                  <td>{MODE_LABEL[r.analysis_mode ?? 'both']}</td>
                   <td><StatusPill status={r.status} /></td>
-                  <td><FindingPill fracture={r.fracture_detected} confidence={r.confidence} /></td>
-                  <td className="num">{r.bone_age_months != null ? formatMonths(r.bone_age_months) : <span className="muted">n/a</span>}</td>
+                  <td><FindingPill fracture={r.fracture_detected} confidence={r.confidence} notRun={!runsFracture(r.analysis_mode)} /></td>
+                  <td className="num">
+                    {!runsBoneAge(r.analysis_mode) ? <span className="muted">Not run</span>
+                      : r.bone_age_months != null ? formatMonths(r.bone_age_months) : <span className="muted">n/a</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>

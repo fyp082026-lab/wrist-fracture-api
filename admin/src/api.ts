@@ -19,11 +19,24 @@ export interface Account {
 
 export type ScanStatus = 'uploaded' | 'analyzing' | 'completed' | 'failed';
 
+/** Which AI models a scan ran (fusion is not trained yet). */
+export type AnalysisMode = 'fracture' | 'bone_age' | 'both';
+
+export const MODE_LABEL: Record<AnalysisMode, string> = {
+  fracture: 'Fracture detection',
+  bone_age: 'Bone age',
+  both: 'Fracture + bone age',
+};
+
+export const runsFracture = (m: AnalysisMode | null | undefined) => m !== 'bone_age';
+export const runsBoneAge = (m: AnalysisMode | null | undefined) => m !== 'fracture';
+
 export interface ScanRow {
   id: string;
   user_id: string;
   patient_id: string | null;
   status: ScanStatus;
+  analysis_mode: AnalysisMode | null;
   created_at: string;
   user_email: string | null;
   patient_code: string | null;
@@ -41,10 +54,12 @@ export interface Detection {
 }
 
 export interface ScanDetail {
-  scan: { id: string; user_id: string; status: ScanStatus; created_at: string; image_path: string };
+  scan: { id: string; user_id: string; status: ScanStatus; analysis_mode: AnalysisMode | null; created_at: string; image_path: string };
   patient: { patient_code: string | null; age_months: number | null; sex: 'M' | 'F' | null } | null;
   result: {
-    fracture_detected: boolean;
+    analysis_mode?: AnalysisMode | null;
+    /** null when fracture detection was not run. */
+    fracture_detected: boolean | null;
     confidence: number | null;
     fracture_confidence?: number | null;
     detections: Detection[] | null;

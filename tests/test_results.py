@@ -36,3 +36,17 @@ def test_implausible_bone_age_is_reported_as_unavailable():
     assert safe_bone_age(0) == 0.0
     _, resp = build_result("s1", [], 10, 10, -3.2, 12)
     assert resp["bone_age_months"] is None and resp["bone_age_formatted"] is None
+
+
+def test_fracture_only_mode_has_no_bone_age():
+    payload, response = build_result("s1", [(0.8, 10, 10, 40, 40)], 100, 100, 97.4, 96, "fracture")
+    assert payload["analysis_mode"] == "fracture"
+    assert payload["fracture_detected"] is True and payload["bone_age_months"] is None
+    assert response["bone_age_formatted"] is None
+
+
+def test_bone_age_only_mode_never_claims_no_fracture():
+    payload, _ = build_result("s1", None, 100, 100, 97.4, 96, "bone_age")
+    assert payload["fracture_detected"] is None  # not checked, not "no fracture"
+    assert payload["detections"] == [] and payload["confidence"] is None
+    assert payload["bone_age_months"] == 97.4

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, formatDate, formatMonths, type ScanDetail } from '../api';
+import { MODE_LABEL, api, formatDate, formatMonths, runsBoneAge, runsFracture, type ScanDetail } from '../api';
 import { FindingPill, StatusPill } from './Pills';
 
 const DEFAULT_DISCLAIMER = 'AI-assisted finding. Decision support only, not a diagnosis.';
@@ -25,6 +25,7 @@ export function ScanDrawer({ scanId, onClose }: { scanId: string; onClose: () =>
   }, [scanId, onClose]);
 
   const r = detail?.result;
+  const mode = detail?.scan.analysis_mode ?? r?.analysis_mode ?? 'both';
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
@@ -59,9 +60,25 @@ export function ScanDrawer({ scanId, onClose }: { scanId: string; onClose: () =>
             </div>
             <dl className="kv">
               <dt>Status</dt><dd><StatusPill status={detail.scan.status} /></dd>
-              <dt>AI-assisted finding</dt><dd><FindingPill fracture={r?.fracture_detected ?? null} confidence={r?.confidence ?? null} /></dd>
-              <dt>Top confidence</dt><dd className="num">{r?.confidence != null ? `${Math.round(r.confidence * 100)}%` : 'Not available'}</dd>
-              <dt>Estimated bone age</dt><dd className="num">{formatMonths(r?.bone_age_months)}</dd>
+              <dt>Analysis</dt><dd>{MODE_LABEL[mode]}</dd>
+            </dl>
+            <h3 className="drawer-section">Fracture detection · YOLOv8</h3>
+            {runsFracture(mode) ? (
+              <dl className="kv">
+                <dt>AI-assisted finding</dt><dd><FindingPill fracture={r?.fracture_detected ?? null} confidence={r?.confidence ?? null} /></dd>
+                <dt>Regions found</dt><dd className="num">{r ? (r.detections ?? []).length : 'Not available'}</dd>
+                <dt>Top confidence</dt><dd className="num">{r?.confidence != null ? `${Math.round(r.confidence * 100)}%` : 'Not available'}</dd>
+              </dl>
+            ) : <p className="muted">Not run for this scan.</p>}
+            <h3 className="drawer-section">Bone age · EfficientNet-B3</h3>
+            {runsBoneAge(mode) ? (
+              <dl className="kv">
+                <dt>Estimated bone age</dt><dd className="num">{formatMonths(r?.bone_age_months)}</dd>
+                <dt>Actual age</dt><dd className="num">{formatMonths(detail.patient?.age_months)}</dd>
+              </dl>
+            ) : <p className="muted">Not run for this scan.</p>}
+            <h3 className="drawer-section">Patient and scan</h3>
+            <dl className="kv">
               <dt>Patient code</dt><dd>{detail.patient?.patient_code || 'None'}</dd>
               <dt>Patient age</dt><dd className="num">{formatMonths(detail.patient?.age_months)}</dd>
               <dt>Sex</dt><dd>{detail.patient?.sex === 'F' ? 'Female' : detail.patient?.sex === 'M' ? 'Male' : 'Unknown'}</dd>

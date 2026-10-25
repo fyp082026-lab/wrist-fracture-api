@@ -246,7 +246,9 @@ export function StatusChip({ status }: { status: ScanStatus }) {
 }
 
 /** AI-assisted wording only: never "diagnosis" or "confirmed". */
-export function FindingChip({ fracture, confidence }: { fracture: boolean; confidence: number | null }) {
+export function FindingChip({ fracture, confidence }: { fracture: boolean | null; confidence: number | null }) {
+  // null: fracture detection was not run for this scan (bone age only).
+  if (fracture === null) return <Chip label="Fracture check not run" icon="remove-circle-outline" tone="neutral" />;
   const s = deriveFindingStatus(fracture, confidence);
   if (s === 'no_fracture') return <Chip label="No fracture suggested" icon="shield-checkmark" tone="intact" />;
   if (s === 'low_confidence') return <Chip label="Lower confidence, review carefully" icon="warning" tone="lowConfidence" />;

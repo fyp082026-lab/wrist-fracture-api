@@ -83,6 +83,9 @@ create table if not exists public.scans (
   image_path text not null,
   status     text not null default 'uploaded'
              constraint scans_status_check check (status in ('uploaded', 'analyzing', 'completed', 'failed')),
+  -- Which models run: fracture detection, bone age, or both.
+  analysis_mode text not null default 'both'
+             constraint scans_analysis_mode_check check (analysis_mode in ('fracture', 'bone_age', 'both')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -91,7 +94,9 @@ create table if not exists public.analysis_results (
   id                  uuid primary key default gen_random_uuid(),
   scan_id             uuid not null unique references public.scans (id) on delete cascade,
   user_id             uuid not null references auth.users (id) on delete cascade,
-  fracture_detected   boolean,
+  analysis_mode       text not null default 'both'
+                      constraint analysis_results_analysis_mode_check check (analysis_mode in ('fracture', 'bone_age', 'both')),
+  fracture_detected   boolean,  -- null when fracture detection was not run
   confidence          double precision,
   fracture_confidence numeric,
   low_confidence      boolean not null default false,

@@ -97,7 +97,8 @@ def predict_bone_age(image, sex):
 
 def detect_fractures(image):
     """Returns [(confidence, x1, y1, x2, y2), ...] in pixels, fracture class only."""
-    r = yolo_model(image, verbose=False)[0]
+    # Same image size as training (imgsz 640 in args.yaml); 0.25 is YOLO's default threshold.
+    r = yolo_model(image, imgsz=640, conf=0.25, verbose=False)[0]
     out = []
     for b in r.boxes:
         if yolo_model.names[int(b.cls[0])].lower() != FRACTURE_LABEL:

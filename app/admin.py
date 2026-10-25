@@ -98,7 +98,7 @@ def build_admin_router(supabase, verify_token, get_role):
         limit: int = Query(50, ge=1, le=200),
         offset: int = Query(0, ge=0),
     ):
-        q = supabase.table("scans").select("id, user_id, patient_id, status, created_at", count="exact")
+        q = supabase.table("scans").select("id, user_id, patient_id, status, analysis_mode, created_at", count="exact")
         if status:
             if status not in SCAN_STATUSES:
                 raise HTTPException(400, "Unknown status")
