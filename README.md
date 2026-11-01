@@ -42,7 +42,7 @@ and the choice is saved with the scan (`scans.analysis_mode`, `analysis_results.
 
 | Option | `analysis_mode` | Model | Project module | Test result of the trained model |
 | --- | --- | --- | --- | --- |
-| Fracture detection | `fracture` | YOLOv8m (GRAZPEDWRI-DX) | B | precision 0.74, recall 0.53, mAP50 0.56 (all 9 classes) |
+| Fracture detection | `fracture` | YOLOv8m (GRAZPEDWRI-DX) | B | fracture class on the test set (1,938 X-rays): precision 88.4%, recall 90.4%, mAP50 0.936 |
 | Bone age | `bone_age` | EfficientNet-B3 (RSNA Bone Age) | C | MAE 6.9 months on 1,262 test X-rays; 83.5% within 12 months |
 | Fracture + bone age | `both` | both | B + C | |
 | Fusion AI | (coming soon) | bone-age-aware fracture type | D | not trained yet |

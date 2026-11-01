@@ -175,7 +175,7 @@ function FractureLive({ s }: { s: FractureStats }) {
           <div className="bar-axis">{s.confidence_bins.map((_, i) => <span key={i}>{i * 10}%</span>)}</div>
           <div className="chart-foot">
             <span><span className="swatch" style={{ background: 'var(--warn)' }} /> below {cut}%: shown as "lower confidence"</span>
-            <span>Model's best F1 is near 40%</span>
+            <span>In testing, findings under {cut}% were real about 2 times in 3</span>
           </div>
         </div>
       )}
