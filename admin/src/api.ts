@@ -19,24 +19,11 @@ export interface Account {
 
 export type ScanStatus = 'uploaded' | 'analyzing' | 'completed' | 'failed';
 
-/** Which AI models a scan ran (fusion is not trained yet). */
-export type AnalysisMode = 'fracture' | 'bone_age' | 'both';
-
-export const MODE_LABEL: Record<AnalysisMode, string> = {
-  fracture: 'Fracture detection',
-  bone_age: 'Bone age',
-  both: 'Fracture + bone age',
-};
-
-export const runsFracture = (m: AnalysisMode | null | undefined) => m !== 'bone_age';
-export const runsBoneAge = (m: AnalysisMode | null | undefined) => m !== 'fracture';
-
 export interface ScanRow {
   id: string;
   user_id: string;
   patient_id: string | null;
   status: ScanStatus;
-  analysis_mode: AnalysisMode | null;
   created_at: string;
   user_email: string | null;
   patient_code: string | null;
@@ -44,7 +31,6 @@ export interface ScanRow {
   patient_sex: 'M' | 'F' | null;
   fracture_detected: boolean | null;
   confidence: number | null;
-  bone_age_months: number | null;
 }
 
 export interface Detection {
@@ -54,51 +40,19 @@ export interface Detection {
 }
 
 export interface ScanDetail {
-  scan: { id: string; user_id: string; status: ScanStatus; analysis_mode: AnalysisMode | null; created_at: string; image_path: string };
+  scan: { id: string; user_id: string; status: ScanStatus; created_at: string; image_path: string };
   patient: { patient_code: string | null; age_months: number | null; sex: 'M' | 'F' | null } | null;
   result: {
-    analysis_mode?: AnalysisMode | null;
-    /** null when fracture detection was not run. */
-    fracture_detected: boolean | null;
+    fracture_detected: boolean;
     confidence: number | null;
     fracture_confidence?: number | null;
     detections: Detection[] | null;
-    bone_age_months: number | null;
     clinical_disclaimer: string | null;
     created_at: string;
   } | null;
   user_email: string | null;
   image_url: string | null;
 }
-
-/** Live numbers for one model, from every scan that ran it. */
-export interface ModelStatsBase {
-  scans: number;
-  completed: number;
-  failed: number;
-  in_progress: number;
-}
-
-export interface FractureStats extends ModelStatsBase {
-  model: 'fracture';
-  fracture_suggested: number;
-  no_fracture: number;
-  lower_confidence: number;
-  low_confidence_threshold: number;
-  mean_confidence: number | null;
-  confidence_bins: number[];
-}
-
-export interface BoneAgeStats extends ModelStatsBase {
-  model: 'bone_age';
-  with_estimate: number;
-  mean_abs_gap_months: number | null;
-  mean_gap_months: number | null;
-  within_12_months: number;
-  points: { actual_months: number; bone_age_months: number }[];
-}
-
-export type ModelStats = FractureStats | BoneAgeStats;
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -121,14 +75,12 @@ async function request<T>(path: string): Promise<T> {
 export const api = {
   me: () => request<{ email: string; role: Role }>('/admin/api/me'),
   users: () => request<{ users: Account[] }>('/admin/api/users'),
-  scans: (params: { status?: string; userId?: string; model?: 'fracture' | 'bone_age'; limit: number; offset: number }) => {
+  scans: (params: { status?: string; userId?: string; limit: number; offset: number }) => {
     const q = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
     if (params.status) q.set('status', params.status);
     if (params.userId) q.set('user_id', params.userId);
-    if (params.model) q.set('model', params.model);
     return request<{ scans: ScanRow[]; total: number }>(`/admin/api/scans?${q}`);
   },
-  modelStats: (model: 'fracture' | 'bone_age') => request<ModelStats>(`/admin/api/models/${model}/stats`),
   scan: (id: string) => request<ScanDetail>(`/admin/api/scans/${encodeURIComponent(id)}`),
 };
 

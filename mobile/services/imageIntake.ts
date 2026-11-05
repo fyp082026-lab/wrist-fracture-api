@@ -10,7 +10,7 @@ export const MAX_ORIGINAL_BYTES = 20 * 1024 * 1024;
 export const MAX_UPLOAD_EDGE_PX = 2048;
 /**
  * Smaller images (thumbnails, screenshots of a web page) lack the bone detail
- * the models need: bone age is estimated at 384 px and fractures at 640 px.
+ * the model needs: fractures are detected at 640 px.
  */
 export const MIN_SHORT_EDGE_PX = 512;
 const JPEG_QUALITY = 0.9;

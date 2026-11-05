@@ -113,34 +113,24 @@ def fake_analysis_app(monkeypatch, reject_status=(), size=(600, 800)):
     ))
     monkeypatch.setattr(main, "inference", SimpleNamespace(
         detect_fractures=lambda _img: calls.append("yolo") or [(0.9, 10, 10, 50, 40)],
-        predict_bone_age=lambda _img, _sex: calls.append("bone") or 97.4,
-        bone_model=object()))
+    ))
     return TestClient(main.app), db, calls
 
 
-def analyze(c, mode=None):
-    body = {"scan_id": "s1", "image_path": "u1/s1.jpg", "patient_age_months": 96, "patient_sex": "M"}
-    if mode:
-        body["analysis_mode"] = mode
+def analyze(c):
+    body = {"scan_id": "s1", "image_path": "u1/s1.jpg", "patient_age_months": 96}
     return c.post("/analyze", json=body, headers={"Authorization": "Bearer user-token"})
 
 
-def test_each_mode_runs_only_its_models(monkeypatch):
-    for mode, expected in [("fracture", ["yolo"]), ("bone_age", ["bone"]), ("both", ["yolo", "bone"]), (None, ["yolo", "bone"])]:
-        c, db, calls = fake_analysis_app(monkeypatch)
-        r = analyze(c, mode)
-        assert r.status_code == 200, (mode, r.text)
-        assert calls == expected, mode
-        body = r.json()
-        assert body["analysis_mode"] == (mode or "both")
-        assert (body["fracture_detected"] is None) == (mode == "bone_age")
-        assert (body["bone_age_months"] is None) == (mode == "fracture")
-        assert ("scans", {"status": "analyzing", "analysis_mode": mode or "both"}) in db["writes"]
-
-
-def test_unknown_mode_is_rejected(monkeypatch):
-    c, _, calls = fake_analysis_app(monkeypatch)
-    assert analyze(c, "fusion").status_code == 422 and calls == []
+def test_scan_runs_yolo_and_is_saved_as_fracture_detection(monkeypatch):
+    c, db, calls = fake_analysis_app(monkeypatch)
+    r = analyze(c)
+    assert r.status_code == 200, r.text
+    assert calls == ["yolo"]
+    body = r.json()
+    assert body["analysis_mode"] == "fracture" and body["fracture_detected"] is True
+    assert "bone_age_months" not in body
+    assert ("scans", {"status": "analyzing", "analysis_mode": "fracture"}) in db["writes"]
 
 
 def test_saved_result_is_returned_even_if_status_update_fails(monkeypatch):

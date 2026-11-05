@@ -41,6 +41,10 @@ class Query:
         self.rows = [r for r in self.rows if r.get(col) == val]
         return self
 
+    def neq(self, col, val):
+        self.rows = [r for r in self.rows if r.get(col) != val]
+        return self
+
     def in_(self, col, vals):
         self.rows = [r for r in self.rows if r.get(col) in vals]
         return self
@@ -137,7 +141,7 @@ def test_users_come_from_one_table_with_roles(client):
 
 def test_scans_list_filters_and_joins(client):
     d = client.get("/admin/api/scans?status=completed", headers=ADMIN_H).json()
-    assert d["total"] == 3  # s1, s3, s4
+    assert d["total"] == 2  # s1, s4
     s = d["scans"][0]
     assert s["user_email"] == "one@x.org" and s["patient_code"] == "P-1" and s["fracture_detected"] is True
     assert client.get("/admin/api/scans?status=bogus", headers=ADMIN_H).status_code == 400
@@ -174,31 +178,11 @@ def test_page_is_never_stale_and_hashed_bundles_cache_forever(tmp_path):
     assert "immutable" in c.get("/admin/assets/index-abc123.js").headers["cache-control"]
 
 
-def test_scans_can_be_filtered_by_model(client):
-    def ids(model):
-        return [s["id"] for s in client.get(f"/admin/api/scans?model={model}", headers=ADMIN_H).json()["scans"]]
-    assert ids("fracture") == ["s1", "s2", "s4"]
-    assert ids("bone_age") == ["s1", "s2", "s3"]
-    assert client.get("/admin/api/scans?model=fusion", headers=ADMIN_H).status_code == 400
+def test_bone_age_only_scans_are_hidden(client):
+    rows = client.get("/admin/api/scans", headers=ADMIN_H).json()["scans"]
+    assert [s["id"] for s in rows] == ["s1", "s2", "s4"]
+    assert "bone_age_months" not in rows[0]
 
 
-def test_fracture_model_stats(client):
-    s = client.get("/admin/api/models/fracture/stats", headers=ADMIN_H).json()
-    assert (s["scans"], s["completed"], s["failed"]) == (3, 2, 1)
-    assert (s["fracture_suggested"], s["no_fracture"], s["lower_confidence"]) == (2, 0, 1)
-    assert s["mean_confidence"] == 0.7
-    assert s["confidence_bins"][5] == 1 and s["confidence_bins"][9] == 1
-
-
-def test_bone_age_model_stats(client):
-    s = client.get("/admin/api/models/bone_age/stats", headers=ADMIN_H).json()
-    assert (s["scans"], s["completed"], s["with_estimate"]) == (3, 2, 2)
-    # patient is 96 months; estimates 100 and 120 -> gaps +4 and +24
-    assert s["mean_abs_gap_months"] == 14.0 and s["mean_gap_months"] == 14.0
-    assert s["within_12_months"] == 1
-    assert {"actual_months": 96.0, "bone_age_months": 120.0} in s["points"]
-
-
-def test_model_stats_are_admin_only_and_known_models_only(client):
-    assert client.get("/admin/api/models/fracture/stats", headers=USER_H).status_code == 403
-    assert client.get("/admin/api/models/fusion/stats", headers=ADMIN_H).status_code == 404
+def test_ai_model_pages_are_gone(client):
+    assert client.get("/admin/api/models/fracture/stats", headers=ADMIN_H).status_code == 404

@@ -15,7 +15,7 @@ import { supabase } from '@/services/supabase';
 import { devLog, devLogStart } from '@/services/devLogger';
 import { config } from '@/services/config';
 import {
-  type AnalysisMode,
+  ANALYSIS_MODE,
   type AnalyzeRequest,
   type AnalyzeResponse,
   ContractError,
@@ -23,12 +23,10 @@ import {
   type PatientSex,
   STORAGE_BUCKET,
   type ScanStatus,
-  DEFAULT_ANALYSIS_MODE,
   buildImagePath,
   formatAgeMonths,
   parseAnalysisResultRow,
   parseAnalyzeResponse,
-  toAnalysisMode,
 } from '@/services/contract';
 import { ImageIntakeError, prepareImageForUpload } from '@/services/imageIntake';
 
@@ -81,8 +79,6 @@ export interface AnalysisInput {
   imageUri?: string | null;
   /** Required for a new scan. For an existing scan the stored values are used. */
   patient?: PatientInput;
-  /** Which models to run (new scans only; a retry keeps the scan's stored mode). */
-  mode?: AnalysisMode;
   onProgress?: (stage: 'uploading' | 'analyzing') => void;
   signal?: AbortSignal;
 }
@@ -201,14 +197,10 @@ function resultFromRow(row: unknown, ageMonths: number): AnalyzeResponse {
   return {
     scan_id: parsed.scan_id,
     status: 'completed',
-    analysis_mode: parsed.analysis_mode,
     fracture_detected: parsed.fracture_detected,
     fracture_type: parsed.fracture_type,
     confidence: parsed.confidence,
     detections: parsed.detections,
-    bone_age_months: parsed.bone_age_months,
-    bone_age_formatted:
-      parsed.bone_age_months != null ? formatAgeMonths(parsed.bone_age_months) : null,
     chronological_age_formatted: formatAgeMonths(ageMonths),
     grad_cam_path: parsed.grad_cam_path,
     clinical_disclaimer: parsed.clinical_disclaimer || DEFAULT_CLINICAL_DISCLAIMER,
@@ -270,19 +262,17 @@ interface ScanRecord {
   status: ScanStatus;
   imagePath: string;
   patient: PatientInput;
-  mode: AnalysisMode;
 }
 
 /** Returns the existing scan (with its stored patient values) or creates it. */
 async function ensureScanRecord(
   userId: string,
   scanId: string,
-  patient: PatientInput | undefined,
-  mode: AnalysisMode
+  patient: PatientInput | undefined
 ): Promise<ScanRecord> {
   const { data: existing, error: readError } = await supabase
     .from('scans')
-    .select('status, image_path, analysis_mode, patients(age_months, sex, patient_code)')
+    .select('status, image_path, patients(age_months, sex, patient_code)')
     .eq('id', scanId)
     .maybeSingle();
   if (readError) throw dbFailure(readError, MESSAGES.recordFailed);
@@ -296,7 +286,6 @@ async function ensureScanRecord(
       status: existing.status as ScanStatus,
       imagePath: existing.image_path,
       patient: { ageMonths: stored.ageMonths, sex: stored.sex, code: p?.patient_code },
-      mode: toAnalysisMode(existing.analysis_mode),
     };
   }
 
@@ -329,19 +318,19 @@ async function ensureScanRecord(
     patient_id: patientRow.id,
     image_path: imagePath,
     status: 'uploaded',
-    analysis_mode: mode,
+    analysis_mode: ANALYSIS_MODE,
   });
   if (scanError) {
     // Best effort: do not leave an orphaned patient row behind.
     await supabase.from('patients').delete().eq('id', patientRow.id);
     // 23505 = unique violation: a concurrent run already created this scan; reuse it.
     if ((scanError as { code?: string }).code === '23505') {
-      return ensureScanRecord(userId, scanId, patient, mode);
+      return ensureScanRecord(userId, scanId, patient);
     }
     throw dbFailure(scanError, MESSAGES.recordFailed);
   }
 
-  return { status: 'uploaded', imagePath, patient: { ...patient, code: patientCode }, mode };
+  return { status: 'uploaded', imagePath, patient: { ...patient, code: patientCode } };
 }
 
 async function imageExistsInBucket(imagePath: string): Promise<boolean> {
@@ -558,7 +547,7 @@ export async function runAnalysisPipeline(input: AnalysisInput): Promise<Analyze
   }
 
   input.onProgress?.('uploading');
-  const scan = await ensureScanRecord(userId, scanId, input.patient, input.mode ?? DEFAULT_ANALYSIS_MODE);
+  const scan = await ensureScanRecord(userId, scanId, input.patient);
   const ageMonths = scan.patient.ageMonths;
   throwIfCancelled(signal);
 
@@ -581,8 +570,7 @@ export async function runAnalysisPipeline(input: AnalysisInput): Promise<Analyze
     scan_id: scanId,
     image_path: scan.imagePath,
     patient_age_months: ageMonths,
-    patient_sex: scan.patient.sex,
-    analysis_mode: scan.mode,
+    analysis_mode: ANALYSIS_MODE,
   };
 
   for (let attempt = 1; attempt <= MAX_ANALYZE_ATTEMPTS; attempt++) {

@@ -1,11 +1,11 @@
 """Turns raw model output into the saved/returned analysis result (no ML imports).
 
 Values are made safe before they are stored, because the app rejects results
-it cannot trust: boxes are clamped to the image, degenerate boxes dropped, and
-a bone age outside 0-300 months is reported as unavailable.
+it cannot trust: boxes are clamped to the image and degenerate boxes dropped.
 """
 DISCLAIMER = "AI-assisted finding. Decision support only, not a diagnosis."
-BONE_AGE_MIN, BONE_AGE_MAX = 0.0, 300.0
+# Saved with every scan; the only analysis this build runs.
+ANALYSIS_MODE = "fracture"
 
 
 def _clamp01(v):
@@ -29,19 +29,6 @@ def normalize_boxes(raw, width, height):
     return detections, top
 
 
-def safe_bone_age(months):
-    """Rounded months, or None when the model output is missing or implausible."""
-    if months is None:
-        return None
-    try:
-        m = float(months)
-    except (TypeError, ValueError):
-        return None
-    if m != m or m < BONE_AGE_MIN or m > BONE_AGE_MAX:  # NaN or out of range
-        return None
-    return round(m, 2)
-
-
 def fmt_months(months):
     if months is None:
         return None
@@ -49,38 +36,22 @@ def fmt_months(months):
     return f"{m // 12}y {m % 12}m"
 
 
-# Which models run for each analysis mode.
-MODES = {
-    "fracture": {"fracture": True, "bone_age": False},
-    "bone_age": {"fracture": False, "bone_age": True},
-    "both": {"fracture": True, "bone_age": True},
-}
-
-
-def build_result(scan_id, raw_boxes, width, height, bone_age, patient_age_months, mode="both"):
-    """Returns (row for analysis_results, API response).
-
-    raw_boxes is None when fracture detection was not run (mode "bone_age"):
-    fracture_detected is then None, meaning "not checked", never "no fracture".
-    """
-    ran_fracture = raw_boxes is not None
-    detections, top = normalize_boxes(raw_boxes or [], width, height)
-    age = safe_bone_age(bone_age) if MODES[mode]["bone_age"] else None
+def build_result(scan_id, raw_boxes, width, height, patient_age_months):
+    """Returns (row for analysis_results, API response)."""
+    detections, top = normalize_boxes(raw_boxes, width, height)
     payload = {
         "scan_id": scan_id,
-        "analysis_mode": mode,
-        "fracture_detected": bool(detections) if ran_fracture else None,
+        "analysis_mode": ANALYSIS_MODE,
+        "fracture_detected": bool(detections),
         "fracture_type": None,  # no fracture-typing model yet
         "confidence": top,
         "detections": detections,
-        "bone_age_months": age,
         "grad_cam_path": None,
         "clinical_disclaimer": DISCLAIMER,
     }
     response = {
         **payload,
         "status": "completed",
-        "bone_age_formatted": fmt_months(age),
         "chronological_age_formatted": fmt_months(patient_age_months),
     }
     return payload, response

@@ -6,7 +6,6 @@ import {
   formatAgeMonths,
   parseAnalysisResultRow,
   parseAnalyzeResponse,
-  toAnalysisMode,
 } from '@/services/contract';
 
 const valid = {
@@ -16,8 +15,6 @@ const valid = {
   fracture_type: null,
   confidence: 0.87,
   detections: [{ label: 'Fracture', confidence: 0.87, box_normalized: [0.41, 0.52, 0.58, 0.66] }],
-  bone_age_months: 97.4,
-  bone_age_formatted: '8y 1m',
   chronological_age_formatted: '8y 4m',
   grad_cam_path: null,
   clinical_disclaimer: 'AI-assisted finding. Decision support only, not a diagnosis.',
@@ -41,10 +38,9 @@ describe('parseAnalyzeResponse', () => {
   });
 
   it('reads absent nullable fields as null', () => {
-    const { grad_cam_path, bone_age_months, ...rest } = valid;
+    const { grad_cam_path, ...rest } = valid;
     const parsed = parseAnalyzeResponse(rest);
     expect(parsed.grad_cam_path).toBeNull();
-    expect(parsed.bone_age_months).toBeNull();
   });
 
   it('accepts a negative finding with null confidence and no detections', () => {
@@ -76,12 +72,6 @@ describe('parseAnalyzeResponse', () => {
     expect(parsed.detections[0].box_normalized).toEqual([0, 0.1, 1, 0.2]);
   });
 
-  it.each([-3.2, 301])('shows an implausible bone age (%s) as not available', (age) => {
-    const parsed = parseAnalyzeResponse({ ...valid, bone_age_months: age });
-    expect(parsed.bone_age_months).toBeNull();
-    expect(parsed.fracture_detected).toBe(true);
-  });
-
   it.each([
     ['the old nested shape', { status: 'success', scan_id: 's1', fracture_analysis: {} }, 'status'],
     ['confidence above 1', { ...valid, confidence: 87 }, 'confidence'],
@@ -104,13 +94,11 @@ describe('parseAnalysisResultRow', () => {
       fracture_type: null,
       confidence: '0.8700',
       detections: JSON.stringify(valid.detections),
-      bone_age_months: '97.40',
       grad_cam_path: null,
       clinical_disclaimer: null,
       created_at: '2026-10-15T10:00:00Z',
     });
     expect(row.confidence).toBe(0.87);
-    expect(row.bone_age_months).toBe(97.4);
     expect(row.detections).toHaveLength(1);
   });
 
@@ -119,7 +107,6 @@ describe('parseAnalysisResultRow', () => {
       scan_id: 's2',
       fracture_detected: true,
       fracture_confidence: '0.9200',
-      bone_age_months: 110,
       gradcam_path: 'user/scan2_cam.jpg',
     });
     expect(row.confidence).toBe(0.92);
@@ -136,7 +123,6 @@ describe('parseAnalysisResultRow', () => {
     });
     expect(row.confidence).toBe(0.83);
     expect(row.detections).toHaveLength(1);
-    expect(row.bone_age_months).toBe(104.37);
   });
 
   it('uses the original column when the newer one is empty', () => {
@@ -165,30 +151,13 @@ describe('formatAgeMonths', () => {
   });
 });
 
-describe('analysis modes', () => {
-  it('reads a bone-age-only result: fracture not checked, never "no fracture"', () => {
-    const parsed = parseAnalyzeResponse({
-      ...valid, analysis_mode: 'bone_age', fracture_detected: null, confidence: null, detections: [],
-    });
-    expect(parsed.analysis_mode).toBe('bone_age');
-    expect(parsed.fracture_detected).toBeNull();
-    expect(parsed.bone_age_months).toBe(97.4);
-  });
-
-  it('reads a fracture-only result', () => {
-    const parsed = parseAnalyzeResponse({ ...valid, analysis_mode: 'fracture', bone_age_months: null });
+describe('fracture finding', () => {
+  it('ignores bone age fields sent by the full server', () => {
+    const parsed = parseAnalyzeResponse({ ...valid, analysis_mode: 'fracture', bone_age_months: null, bone_age_formatted: null });
     expect(parsed.fracture_detected).toBe(true);
-    expect(parsed.bone_age_months).toBeNull();
   });
 
-  it('still requires a fracture answer when fracture detection ran', () => {
-    expect(rejectedField({ ...valid, analysis_mode: 'fracture', fracture_detected: null })).toBe('fracture_detected');
+  it('requires a fracture answer', () => {
     expect(rejectedField({ ...valid, fracture_detected: null })).toBe('fracture_detected');
-  });
-
-  it('treats results saved before modes existed as both models', () => {
-    const row = parseAnalysisResultRow({ scan_id: 's1', fracture_detected: false, bone_age_months: 100 });
-    expect(row.analysis_mode).toBe('both');
-    expect(toAnalysisMode('fusion')).toBe('both');
   });
 });

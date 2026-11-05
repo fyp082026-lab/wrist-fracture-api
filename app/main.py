@@ -1,4 +1,4 @@
-"""PediaFracture API: authentication, roles and AI analysis of wrist X-rays.
+"""PediaFracture API: authentication, roles and AI fracture detection on wrist X-rays.
 
 - Users sign in to the mobile app and send X-rays to POST /analyze.
 - Admins sign in to the admin website (/admin) and read users and scans.
@@ -9,13 +9,11 @@ import os
 import time
 
 from fastapi import FastAPI, Header, HTTPException, Depends
-from typing import Literal
-
 from pydantic import BaseModel
 from supabase import create_client
 
 from app.supabase_check import SupabaseProbe, is_api_key_error
-from app.results import MODES, build_result
+from app.results import ANALYSIS_MODE, build_result
 
 app = FastAPI(title="PediaFracture API")
 
@@ -25,17 +23,17 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase_probe = SupabaseProbe(supabase)
 
-# The models need torch/ultralytics (installed in the Docker image only).
+# The model needs torch/ultralytics (installed in the Docker image only).
 try:
     from app import inference
     inference_error = None
 except Exception as e:  # tests and machines without the ML packages
     inference = None
     inference_error = f"{type(e).__name__}: {e}"
-    print("AI models not loaded:", inference_error, flush=True)
+    print("AI model not loaded:", inference_error, flush=True)
 
 
-# Smaller images (thumbnails, screenshots) lack the bone detail the models need.
+# Smaller images (thumbnails, screenshots) lack the bone detail the model needs.
 MIN_SHORT_EDGE_PX = 512
 
 
@@ -51,10 +49,6 @@ class AnalyzeRequest(BaseModel):
     scan_id: str
     image_path: str
     patient_age_months: int = 84
-    patient_sex: str = "M"
-    # fracture = YOLOv8 only, bone_age = EfficientNet only, both = both models.
-    # Older app versions do not send it and get both.
-    analysis_mode: Literal["fracture", "bone_age", "both"] = "both"
 
 
 def verify_token(authorization: str = Header(...)):
@@ -85,7 +79,7 @@ def get_role(user_id):
 @app.get("/health")
 def health():
     supabase_error = supabase_probe.status()
-    models = inference.status() if inference else {"device": None, "bone_age_model": False, "bone_age_error": inference_error}
+    models = inference.status() if inference else {"device": None, "model_error": inference_error}
     ready = supabase_error is None and inference is not None
     return {
         "status": "ready" if ready else "degraded",
@@ -108,10 +102,7 @@ def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
     if get_role(user.id) != "user":
         raise HTTPException(403, "Only user accounts can analyse X-rays")
     if inference is None:
-        raise HTTPException(503, "AI models are not available on this server")
-    run = MODES[req.analysis_mode]
-    if req.analysis_mode == "bone_age" and inference.bone_model is None:
-        raise HTTPException(503, "The bone age model is not available on this server")
+        raise HTTPException(503, "The AI model is not available on this server")
     # Ownership checks (the service role key bypasses RLS, so we must check ourselves)
     if not req.image_path.startswith(f"{user.id}/"):
         raise HTTPException(403, "Not your image")
@@ -125,7 +116,7 @@ def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
     started = time.monotonic()
     try:
         supabase.table("scans").update(
-            {"status": "analyzing", "analysis_mode": req.analysis_mode}
+            {"status": "analyzing", "analysis_mode": ANALYSIS_MODE}
         ).eq("id", req.scan_id).execute()
 
         from PIL import Image
@@ -135,16 +126,8 @@ def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
         if min(w, h) < MIN_SHORT_EDGE_PX:
             raise ImageTooSmall(w, h)
 
-        # Only the models the user chose are run.
-        raw_boxes = inference.detect_fractures(image) if run["fracture"] else None
-        bone_age = (
-            inference.predict_bone_age(image, req.patient_sex)
-            if run["bone_age"] and inference.bone_model is not None else None
-        )
-
-        payload, response = build_result(
-            req.scan_id, raw_boxes, w, h, bone_age, req.patient_age_months, req.analysis_mode
-        )
+        raw_boxes = inference.detect_fractures(image)
+        payload, response = build_result(req.scan_id, raw_boxes, w, h, req.patient_age_months)
         # Also fill the table's original columns (user_id, fracture_confidence).
         row = {**payload, "user_id": user.id, "fracture_confidence": payload["confidence"]}
         supabase.table("analysis_results").upsert(row, on_conflict="scan_id").execute()
@@ -165,7 +148,7 @@ def analyze(req: AnalyzeRequest, user=Depends(verify_token)):
     except Exception as e:
         print(f"/analyze: result saved but status update failed for scan {req.scan_id}: "
               f"{type(e).__name__}: {e}", flush=True)
-    print(f"/analyze ({req.analysis_mode}) ok for scan {req.scan_id} in {time.monotonic() - started:.1f}s", flush=True)
+    print(f"/analyze ok for scan {req.scan_id} in {time.monotonic() - started:.1f}s", flush=True)
     return response
 
 

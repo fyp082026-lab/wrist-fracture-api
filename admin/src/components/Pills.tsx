@@ -20,17 +20,7 @@ export function StatusPill({ status }: { status: ScanStatus }) {
 export const LOW_CONFIDENCE_THRESHOLD = 0.65;
 
 /** AI-assisted finding wording only: never "diagnosis" or "confirmed". */
-export function FindingPill({
-  fracture,
-  confidence,
-  notRun = false,
-}: {
-  fracture: boolean | null;
-  confidence: number | null;
-  /** The scan did not run fracture detection (bone age only). */
-  notRun?: boolean;
-}) {
-  if (notRun) return <span className="muted">Not run</span>;
+export function FindingPill({ fracture, confidence }: { fracture: boolean | null; confidence: number | null }) {
   if (fracture == null) return <span className="muted">No result</span>;
   if (!fracture) {
     return (

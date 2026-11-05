@@ -4,17 +4,12 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SPACING } from '@/constants/theme';
 import { Banner, Button, Card, FindingChip, Header, Loading, Row, Screen, StatusChip, styles as ui } from '@/components/ui';
 import { XrayView } from '@/components/XrayView';
-import {
-  ANALYSIS_MODE_INFO,
-  DEFAULT_CLINICAL_DISCLAIMER,
-  formatAgeMonths,
-  runsBoneAge,
-  runsFracture,
-} from '@/services/contract';
+import { DEFAULT_CLINICAL_DISCLAIMER, formatAgeMonths } from '@/services/contract';
 import { formatFullScanDate } from '@/services/format';
 import { getScanRecord, type ScanRecord } from '@/services/records';
 
 const POLL_MS = 5000;
+const SECTION_TITLE = 'FRACTURE DETECTION · YOLOV8';
 
 export default function ScanResult() {
   const router = useRouter();
@@ -60,8 +55,6 @@ export default function ScanResult() {
 
   const r = record.result;
   const p = record.patient;
-  const boneAge = r?.bone_age_months;
-  const ageDiff = boneAge != null && p ? Math.round(boneAge - p.age_months) : null;
 
   return (
     <Screen edges={['top', 'bottom', 'left', 'right']} onRefresh={load} refreshing={false}>
@@ -71,42 +64,19 @@ export default function ScanResult() {
       <XrayView uri={record.imageUrl} detections={r?.detections ?? []} />
 
       {record.status === 'completed' && r ? (
-        <>
-          <Card style={styles.section}>
-            <Text style={ui.label}>FRACTURE DETECTION · {ANALYSIS_MODE_INFO.fracture.model.toUpperCase()}</Text>
-            {runsFracture(r.analysis_mode) ? (
-              <>
-                <FindingChip fracture={r.fracture_detected} confidence={r.confidence} />
-                <Text style={ui.body}>
-                  {r.fracture_detected
-                    ? `The model suggests ${r.detections.length} possible fracture region${r.detections.length === 1 ? '' : 's'}, highlighted on the image.`
-                    : 'The model did not suggest a fracture on this image.'}
-                </Text>
-                <Row label="Top confidence" value={r.confidence != null ? `${Math.round(r.confidence * 100)}%` : 'Not available'} />
-              </>
-            ) : (
-              <NotRun />
-            )}
-          </Card>
-
-          <Card style={styles.section}>
-            <Text style={ui.label}>BONE AGE · {ANALYSIS_MODE_INFO.bone_age.model.toUpperCase()}</Text>
-            {runsBoneAge(r.analysis_mode) ? (
-              <>
-                <Row label="Estimated bone age" value={boneAge != null ? formatAgeMonths(boneAge) : 'Not available'} />
-                <Row label="Actual age" value={p ? formatAgeMonths(p.age_months) : 'Unknown'} />
-                {ageDiff != null ? (
-                  <Row label="Bone age vs. actual age" value={ageDiff === 0 ? 'Same' : `${ageDiff > 0 ? '+' : '−'}${formatAgeMonths(Math.abs(ageDiff))}`} />
-                ) : null}
-              </>
-            ) : (
-              <NotRun />
-            )}
-          </Card>
-        </>
+        <Card style={styles.section}>
+          <Text style={ui.label}>{SECTION_TITLE}</Text>
+          <FindingChip fracture={r.fracture_detected} confidence={r.confidence} />
+          <Text style={ui.body}>
+            {r.fracture_detected
+              ? `The model suggests ${r.detections.length} possible fracture region${r.detections.length === 1 ? '' : 's'}, highlighted on the image.`
+              : 'The model did not suggest a fracture on this image.'}
+          </Text>
+          <Row label="Top confidence" value={r.confidence != null ? `${Math.round(r.confidence * 100)}%` : 'Not available'} />
+        </Card>
       ) : (
         <Card style={styles.section}>
-          <Text style={ui.label}>{ANALYSIS_MODE_INFO[record.mode].title.toUpperCase()}</Text>
+          <Text style={ui.label}>{SECTION_TITLE}</Text>
           {record.status === 'completed' ? (
             <>
               <StatusChip status="completed" />
@@ -143,10 +113,6 @@ export default function ScanResult() {
       <Text style={[ui.disclaimer, { marginTop: SPACING.lg }]}>{r?.clinical_disclaimer || DEFAULT_CLINICAL_DISCLAIMER}</Text>
     </Screen>
   );
-}
-
-function NotRun() {
-  return <Text style={ui.body}>Not run for this scan. Choose this option on a new scan to include it.</Text>;
 }
 
 const styles = StyleSheet.create({

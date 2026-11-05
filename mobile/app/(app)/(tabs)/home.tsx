@@ -36,7 +36,7 @@ export default function Home() {
       <Card style={styles.hero}>
         <Text style={ui.h2}>New X-ray analysis</Text>
         <Text style={[ui.body, { marginBottom: SPACING.base }]}>
-          Upload a pediatric wrist X-ray for AI-assisted fracture detection and bone age estimation.
+          Upload a pediatric wrist X-ray for AI-assisted fracture detection.
         </Text>
         <Button title="Start new scan" icon="add-circle-outline" onPress={() => router.push('/scan/new')} />
       </Card>

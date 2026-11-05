@@ -50,8 +50,6 @@ export interface ServerHealthResult {
   httpStatus: number | null;
   elapsedMs: number;
   device: string | null;
-  boneAgeModel: boolean | null;
-  boneAgeError: string | null;
   /** Transport or configuration problem, when the server could not be read. */
   error: string | null;
 }
@@ -61,7 +59,7 @@ export interface ServerHealthResult {
  * Never sends or returns patient data, scan IDs or tokens.
  */
 export async function fetchServerHealth(): Promise<ServerHealthResult> {
-  const empty = { httpStatus: null, device: null, boneAgeModel: null, boneAgeError: null };
+  const empty = { httpStatus: null, device: null };
   const start = Date.now();
   if (!__DEV__) return { ok: false, elapsedMs: 0, error: 'Dev builds only', ...empty };
   if (!config.healthUrl) {
@@ -77,8 +75,6 @@ export async function fetchServerHealth(): Promise<ServerHealthResult> {
       httpStatus: res.status,
       elapsedMs: Date.now() - start,
       device: health.device,
-      boneAgeModel: health.bone_age_model,
-      boneAgeError: health.bone_age_error,
       error: null,
     };
   } catch (e: any) {
