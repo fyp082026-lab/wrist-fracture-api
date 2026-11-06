@@ -34,7 +34,8 @@ export function XrayView({ uri, detections = [] }: { uri: string | null; detecti
           <View
             key={i}
             style={[styles.box, { left: `${x1 * 100}%`, top: `${y1 * 100}%`, width: `${(x2 - x1) * 100}%`, height: `${(y2 - y1) * 100}%` }]}>
-            <Text style={styles.boxLabel}>{Math.round(d.confidence * 100)}%</Text>
+            {/* Neighbouring boxes alternate above and below so their labels do not overlap. */}
+            <Text numberOfLines={1} style={[styles.boxLabel, i % 2 ? styles.labelBelow : styles.labelAbove]}>{Math.round(d.confidence * 100)}%</Text>
           </View>
         );
       })}
@@ -48,7 +49,10 @@ const styles = StyleSheet.create({
   placeholderText: { fontFamily: FONTS.medium, color: COLORS.textMuted, fontSize: 13 },
   box: { position: 'absolute', borderWidth: 2, borderColor: COLORS.status.fracture.primary, borderRadius: 4 },
   boxLabel: {
-    position: 'absolute', top: -20, left: -2, backgroundColor: COLORS.status.fracture.primary, color: '#fff',
-    fontFamily: FONTS.semibold, fontSize: 11, paddingHorizontal: 5, borderRadius: 4, overflow: 'hidden',
+    // Fixed width: a label sized by its box would wrap to one character per line on small boxes.
+    position: 'absolute', left: -2, width: 40, textAlign: 'center', backgroundColor: COLORS.status.fracture.primary, color: '#fff',
+    fontFamily: FONTS.semibold, fontSize: 11, borderRadius: 4, overflow: 'hidden',
   },
+  labelAbove: { top: -20 },
+  labelBelow: { bottom: -20 },
 });
