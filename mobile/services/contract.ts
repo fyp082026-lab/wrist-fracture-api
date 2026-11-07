@@ -76,10 +76,6 @@ export interface AnalysisResultRow {
   created_at: string | null;
 }
 
-export interface HealthResponse {
-  device: string | null;
-}
-
 // ─── Validation primitives ───────────────────────────────────────────────────
 
 export class ContractError extends Error {
@@ -258,14 +254,6 @@ export function parseAnalysisResultRow(row: unknown): AnalysisResultRow {
     grad_cam_path: nullableString({ grad_cam_path: rawGradCam }, 'grad_cam_path', p),
     clinical_disclaimer: nullableString(obj, 'clinical_disclaimer', p),
     created_at: nullableString(obj, 'created_at', p),
-  };
-}
-
-/** Lenient: unknown keys are ignored, missing ones become null. */
-export function parseHealthResponse(json: unknown): HealthResponse {
-  const obj = typeof json === 'object' && json !== null ? (json as Json) : {};
-  return {
-    device: typeof obj.device === 'string' ? obj.device : null,
   };
 }
 

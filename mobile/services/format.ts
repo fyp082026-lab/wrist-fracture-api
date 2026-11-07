@@ -2,31 +2,6 @@
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function isSameLocalDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-/** Local midnight of the given day. */
-export function startOfLocalDay(now: Date = new Date()): Date {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-/** Short label for list rows: "Today", "Yest" or "Oct 12". */
-export function formatScanDate(timestamp: number, now: Date = new Date()): string {
-  const date = new Date(timestamp);
-  if (isSameLocalDay(date, now)) return 'Today';
-
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (isSameLocalDay(date, yesterday)) return 'Yest';
-
-  return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
-}
-
 /** Full label for record headers: "Oct 14, 2026 · 10:42 AM". */
 export function formatFullScanDate(timestamp: number): string {
   const date = new Date(timestamp);

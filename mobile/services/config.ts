@@ -15,7 +15,6 @@ export interface AppConfig {
   /** Base URL of the analysis server, without a trailing slash or `/analyze`. */
   analysisApiBaseUrl: string;
   analyzeUrl: string;
-  healthUrl: string;
 }
 
 const HTTP_URL_PATTERN = /^https?:\/\/[^\s/]+/i;
@@ -91,7 +90,6 @@ function loadConfig(): AppConfig {
     supabaseAnonKey,
     analysisApiBaseUrl,
     analyzeUrl: analysisApiBaseUrl ? `${analysisApiBaseUrl}/analyze` : '',
-    healthUrl: analysisApiBaseUrl ? `${analysisApiBaseUrl}/health` : '',
   };
 }
 

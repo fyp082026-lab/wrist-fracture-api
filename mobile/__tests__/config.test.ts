@@ -15,9 +15,8 @@ describe('normalizeApiBaseUrl', () => {
 });
 
 describe('config', () => {
-  it('builds /analyze and /health from a legacy .../analyze value', () => {
+  it('builds /analyze from a legacy .../analyze value', () => {
     expect(config.analyzeUrl).toBe('https://api.example.com/analyze');
-    expect(config.healthUrl).toBe('https://api.example.com/health');
   });
 });
 

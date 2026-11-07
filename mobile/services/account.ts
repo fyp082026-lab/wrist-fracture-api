@@ -83,6 +83,5 @@ export async function getRole(userId: string): Promise<Role> {
   return roleFrom((data as { role?: string }).role);
 }
 
-export const ADMIN_SITE_URL = 'https://wristfracture.duckdns.org/admin/';
 export const ADMIN_IN_APP_MESSAGE =
   'This is an administrator account. Administrators sign in on the admin website, not in the app.';
