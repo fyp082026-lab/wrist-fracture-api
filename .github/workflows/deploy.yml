@@ -3,10 +3,10 @@ name: CI/CD
 on:
   push:
     branches: [main, "feat/**", "fix/**"]
-    paths-ignore: ["mobile/**", ".github/workflows/mobile.yml"]
+    paths-ignore: ["clinician_mobile_app/**", ".github/workflows/mobile.yml"]
   pull_request:
     branches: [main]
-    paths-ignore: ["mobile/**", ".github/workflows/mobile.yml"]
+    paths-ignore: ["clinician_mobile_app/**", ".github/workflows/mobile.yml"]
   workflow_dispatch:
 
 permissions:
@@ -27,24 +27,24 @@ jobs:
         with:
           python-version: "3.11"
       - name: Syntax check
-        run: python -m compileall app
+        run: python -m compileall analysis_server
       - name: Admin API tests
         run: |
           pip install -r requirements.txt -r requirements-dev.txt
-          python -m pytest -q tests
+          python -m pytest -q analysis_server_tests
 
   admin:
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: admin
+        working-directory: admin_website
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: admin/package-lock.json
+          cache-dependency-path: admin_website/package-lock.json
       - run: npm ci --no-audit --no-fund
       - name: Typecheck and build admin website
         run: npm run build

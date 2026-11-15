@@ -6,10 +6,10 @@ account and scan on a website.
 
 | Part | Folder | Who uses it | Where it runs |
 | --- | --- | --- | --- |
-| API server + AI models | `app/` | Mobile app and admin website | Docker on AWS EC2, behind nginx at `https://wristfracture.duckdns.org` |
-| Admin website | `admin/` | Admins | `https://wristfracture.duckdns.org/admin/` |
-| Mobile app | `mobile/` | Users | Android APK built by CI (Expo / React Native) |
-| Database setup | `db/schema.sql` | - | Supabase (auth, Postgres, X-ray storage) |
+| API server + AI models | `analysis_server/` | Mobile app and admin website | Docker on AWS EC2, behind nginx at `https://wristfracture.duckdns.org` |
+| Admin website | `admin_website/` | Admins | `https://wristfracture.duckdns.org/admin/` |
+| Mobile app | `clinician_mobile_app/` | Users | Android APK built by CI (Expo / React Native) |
+| Database setup | `database_schema/schema.sql` | - | Supabase (auth, Postgres, X-ray storage) |
 
 ## Roles: one table, decided in code
 
@@ -21,8 +21,8 @@ in application code, which reads `profiles.role`:
 
 | Where | Code | Rule |
 | --- | --- | --- |
-| API server | `get_role()` in `app/main.py` | `/analyze` only for `user`; `/admin/api/*` only for `admin` (`require_admin` in `app/admin.py`) |
-| Mobile app | `getRole()` in `mobile/services/account.ts` | an `admin` account is refused and sent to the website |
+| API server | `get_role()` in `analysis_server/main.py` | `/analyze` only for `user`; `/admin/api/*` only for `admin` (`require_admin` in `analysis_server/admin.py`) |
+| Mobile app | `getRole()` in `clinician_mobile_app/app_logic/account.ts` | an `admin` account is refused and sent to the website |
 | Admin website | `App.tsx` calls `/admin/api/me` | a `user` account is refused (403) and signed out |
 
 **Make someone an admin:** Supabase → Table Editor → `profiles` → set their `role` to `admin`.
@@ -52,7 +52,7 @@ A result that did not run a model shows that part as **Not run** (never as "no f
 Each model also has its own page on the admin website (sidebar → under **Scans**): its training
 accuracy and charts, live numbers from every scan that ran it (`GET /admin/api/models/{model}/stats`),
 suggestions, limitations and the list of its scans. The training figures and notes live in
-[`admin/src/models.ts`](admin/src/models.ts); the charts in `admin/public/charts/`.
+[`admin_website/src/models.ts`](admin_website/src/models.ts); the charts in `admin_website/public/charts/`.
 
 ## How a scan works
 
@@ -86,8 +86,8 @@ app), and the app accepts small rounding errors in result values instead of reje
 
 ## One-time setup
 
-1. New project: run [`db/schema.sql`](db/schema.sql) in Supabase (SQL Editor → New query → Run).
-   Existing project: run the files in [`db/migrations/`](db/migrations) from 004 onwards, in order.
+1. New project: run [`database_schema/schema.sql`](database_schema/schema.sql) in Supabase (SQL Editor → New query → Run).
+   Existing project: run the files in [`database_schema/schema_upgrades/`](database_schema/schema_upgrades) from 004 onwards, in order.
 2. Supabase → Authentication → URL Configuration → **Redirect URLs** must include
    `pediafracture://**` and `https://wristfracture.duckdns.org/admin/**` (and `exp://**` for Expo Go).
 3. EC2 `~/app/.env` holds `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (never committed).
@@ -103,13 +103,13 @@ app), and the app accepts small rounding errors in result values instead of reje
 ## Local development
 
 ```bash
-cd mobile && npm ci && npm start          # Expo; scan the QR code with Expo Go
+cd clinician_mobile_app && npm ci && npm start          # Expo; scan the QR code with Expo Go
 npm run check                             # typecheck + lint + tests
-cd admin && npm ci && npm run dev         # http://localhost:5173/admin/ (API proxied to the live server)
-pip install -r requirements-dev.txt -r requirements.txt && python -m pytest tests
+cd admin_website && npm ci && npm run dev         # http://localhost:5173/admin/ (API proxied to the live server)
+pip install -r requirements-dev.txt -r requirements.txt && python -m pytest analysis_server_tests
 ```
 
 On Windows PowerShell, use `npm.cmd` / `npx.cmd` if script execution is disabled.
 
-`mobile/.env` and `admin/.env` hold only **public** values (Supabase URL, publishable key, API URL).
+`clinician_mobile_app/.env` and `admin_website/.env` hold only **public** values (Supabase URL, publishable key, API URL).
 The service-role key lives only on the server.

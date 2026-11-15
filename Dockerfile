@@ -1,9 +1,9 @@
 # --- Stage 1: build the admin website (served by the API at /admin) ---
 FROM node:22-slim AS admin
 WORKDIR /admin
-COPY admin/package.json admin/package-lock.json ./
+COPY admin_website/package.json admin_website/package-lock.json ./
 RUN npm ci --no-audit --no-fund
-COPY admin/ ./
+COPY admin_website/ ./
 RUN npm run build
 
 # --- Stage 2: the API with the AI models ---
@@ -24,11 +24,11 @@ RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/c
 COPY requirements-ml.txt requirements.txt ./
 RUN pip install -r requirements-ml.txt -r requirements.txt
 
-COPY app ./app
+COPY analysis_server ./analysis_server
 COPY --from=admin /admin/dist /srv/admin_site
 
 RUN useradd -m appuser
 USER appuser
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "analysis_server.main:app", "--host", "0.0.0.0", "--port", "8000"]

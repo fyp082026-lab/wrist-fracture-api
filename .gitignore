@@ -20,17 +20,17 @@ __pycache__/
 .idea/
 # Node
 node_modules/
-admin/dist/
+admin_website/dist/
 
 # Mobile build output
-mobile/android/
-mobile/ios/
-mobile/.expo/
+clinician_mobile_app/android/
+clinician_mobile_app/ios/
+clinician_mobile_app/.expo/
 *.apk
 
 # Public client config is committed on purpose (see the files themselves)
-!admin/.env
-!mobile/.env
+!admin_website/.env
+!clinician_mobile_app/.env
 
 # Local tool config
 .claude/

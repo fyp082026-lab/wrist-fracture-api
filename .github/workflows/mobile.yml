@@ -7,10 +7,10 @@ name: Mobile app
 on:
   push:
     branches: [main, "feat/**", "fix/**"]
-    paths: ["mobile/**", ".github/workflows/mobile.yml"]
+    paths: ["clinician_mobile_app/**", ".github/workflows/mobile.yml"]
   pull_request:
     branches: [main]
-    paths: ["mobile/**", ".github/workflows/mobile.yml"]
+    paths: ["clinician_mobile_app/**", ".github/workflows/mobile.yml"]
   workflow_dispatch:
 
 permissions:
@@ -22,7 +22,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: mobile
+    working-directory: clinician_mobile_app
 
 jobs:
   check:
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: clinician_mobile_app/package-lock.json
       - run: npm ci --no-audit --no-fund
       - name: Typecheck
         run: npx tsc --noEmit
@@ -54,7 +54,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: clinician_mobile_app/package-lock.json
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -66,7 +66,7 @@ jobs:
         run: npx expo prebuild --platform android --no-install --clean
 
       - name: Build release APK
-        working-directory: mobile/android
+        working-directory: clinician_mobile_app/android
         env:
           NODE_ENV: production
         run: |
@@ -102,7 +102,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: PediaFracture-android-${{ github.sha }}
-          path: mobile/${{ steps.apk.outputs.name }}
+          path: clinician_mobile_app/${{ steps.apk.outputs.name }}
           retention-days: 30
 
       - name: Publish as the latest release (main only)
@@ -116,4 +116,4 @@ jobs:
           body: |
             Android build from ${{ github.sha }}.
             Install: download the APK on your phone and open it (allow "Install unknown apps" once).
-          files: mobile/${{ steps.apk.outputs.name }}
+          files: clinician_mobile_app/${{ steps.apk.outputs.name }}

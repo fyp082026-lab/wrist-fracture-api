@@ -5,7 +5,11 @@ __pycache__
 .git
 models
 *.zip
-admin/node_modules
-admin/dist
-mobile
+admin_website/node_modules
+admin_website/dist
+clinician_mobile_app
+analysis_server_tests
+model_evaluation
+database_schema
+docs
 .github
