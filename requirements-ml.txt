@@ -1,2 +1,3 @@
-# AI model (installed in the Docker image only, after CPU-only PyTorch)
+# AI models (installed in the Docker image only, after CPU-only PyTorch)
 ultralytics
+timm
