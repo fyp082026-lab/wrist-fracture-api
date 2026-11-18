@@ -2,8 +2,10 @@
 // Run with `npm test`; nothing here touches the network or the real database.
 import { describe, expect, it } from '@jest/globals';
 import {
+  BAND_EVIDENCE,
   ContractError,
   LOW_CONFIDENCE_THRESHOLD,
+  bandEvidence,
   deriveFindingStatus,
   formatAgeMonths,
   parseAnalysisResultRow,
@@ -157,6 +159,35 @@ describe('lower-confidence threshold', () => {
     expect(deriveFindingStatus(true, 0.65)).toBe('fracture_detected');
     expect(deriveFindingStatus(true, null)).toBe('fracture_detected');
     expect(deriveFindingStatus(false, null)).toBe('no_fracture');
+  });
+});
+
+describe('bandEvidence', () => {
+  it('states the test-set share for a finding at 65% or above', () => {
+    const text = bandEvidence(true, 0.9);
+    expect(text).toContain('98 out of 100');
+    expect(text).toContain('1,122 X-rays');
+    expect(text).not.toContain('false alarm');
+    expect(text).toContain('not a probability for this scan');
+  });
+
+  it('adds the false-alarm warning for a finding between 25% and 65%', () => {
+    const text = bandEvidence(true, 0.4);
+    expect(text).toContain('65 out of 100');
+    expect(text).toContain('112 X-rays');
+    expect(text).toContain('About 1 in 3 is a false alarm');
+  });
+
+  it('is absent when there is no finding or no confidence to place', () => {
+    expect(bandEvidence(false, 0.9)).toBeNull();
+    expect(bandEvidence(null, 0.9)).toBeNull();
+    expect(bandEvidence(true, null)).toBeNull();
+  });
+
+  it('uses the same band edge as the status label', () => {
+    expect(bandEvidence(true, LOW_CONFIDENCE_THRESHOLD)).toContain('98 out of 100');
+    expect(bandEvidence(true, LOW_CONFIDENCE_THRESHOLD - 0.01)).toContain('65 out of 100');
+    expect(BAND_EVIDENCE.fracture_detected.real).toBeGreaterThan(BAND_EVIDENCE.low_confidence.real);
   });
 });
 

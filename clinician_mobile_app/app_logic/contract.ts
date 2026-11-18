@@ -20,6 +20,17 @@ export const STORAGE_BUCKET = 'wrist-xrays';
  */
 export const LOW_CONFIDENCE_THRESHOLD = 0.65;
 
+/**
+ * How often a fracture finding in each band was real, measured on the test set
+ * (1,938 X-rays, model_evaluation/yolo_confidence_thresholds/analyze_scores.py).
+ * `findings` = X-rays in that band; `real` = share of them with a real fracture.
+ * These describe the group of X-rays in the band, not the chance for one scan.
+ */
+export const BAND_EVIDENCE = {
+  fracture_detected: { findings: 1122, real: 0.979 }, // 65% or above
+  low_confidence: { findings: 112, real: 0.652 }, // 25% to 65%
+} as const;
+
 /** Box edges this far past the image border are rounding noise and clamped. */
 export const BOX_TOLERANCE = 0.02;
 /** Bone age outside this range (months) is treated as unavailable. */
@@ -353,6 +364,21 @@ export function deriveFindingStatus(
   return confidence != null && confidence < LOW_CONFIDENCE_THRESHOLD
     ? 'low_confidence'
     : 'fracture_detected';
+}
+
+/** The evidence sentence for a fracture finding, e.g. "98 out of 100 ... were real fractures".
+ * Returns null when there is no finding or no confidence to place it in a band.
+ * Result goes to: the result screen (app/(app)/scan/[id].tsx), under the finding chip. */
+export function bandEvidence(fractureDetected: boolean | null, confidence: number | null): string | null {
+  if (fractureDetected !== true || confidence == null) return null;
+  const band = deriveFindingStatus(true, confidence) === 'low_confidence'
+    ? BAND_EVIDENCE.low_confidence
+    : BAND_EVIDENCE.fracture_detected;
+  const outOf100 = Math.round(band.real * 100);
+  const isLowBand = band === BAND_EVIDENCE.low_confidence;
+  const falseAlarm = isLowBand ? ' About 1 in 3 is a false alarm, so review it carefully.' : '';
+  const count = String(band.findings).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `In our test set, ${outOf100} out of 100 X-rays with a finding at this level were real fractures (${count} X-rays).${falseAlarm} This describes similar X-rays, not a probability for this scan.`;
 }
 
 /** 97.4 → "8y 1m". Months are floored so fractional ages never render as "1.4m".

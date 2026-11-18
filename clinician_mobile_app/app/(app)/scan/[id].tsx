@@ -16,6 +16,7 @@ import { XrayView } from '@/ui_components/XrayView';
 import {
   ANALYSIS_MODE_INFO,
   DEFAULT_CLINICAL_DISCLAIMER,
+  bandEvidence,
   formatAgeMonths,
   runsBoneAge,
   runsFracture,
@@ -94,6 +95,9 @@ export default function ScanResult() {
                     ? `The model suggests ${r.detections.length} possible fracture region${r.detections.length === 1 ? '' : 's'}, highlighted on the image.`
                     : 'The model did not suggest a fracture on this image.'}
                 </Text>
+                {bandEvidence(r.fracture_detected, r.confidence) ? (
+                  <Text style={ui.body}>{bandEvidence(r.fracture_detected, r.confidence)}</Text>
+                ) : null}
                 <Row label="Top confidence" value={r.confidence != null ? `${Math.round(r.confidence * 100)}%` : 'Not available'} />
               </>
             ) : (
