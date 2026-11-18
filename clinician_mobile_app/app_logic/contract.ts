@@ -36,7 +36,7 @@ export type FractureType = 'Growth-Plate' | 'Shaft';
 export type ScanStatus = 'uploaded' | 'analyzing' | 'completed' | 'failed';
 /**
  * Which AI models a scan runs: fracture detection (YOLOv8, Module B), bone age
- * (EfficientNet, Module C), or both. The fusion model (Module D) is not trained yet.
+ * (EfficientNet, Module C), or both.
  */
 export type AnalysisMode = 'fracture' | 'bone_age' | 'both';
 export const ANALYSIS_MODES: readonly AnalysisMode[] = ['fracture', 'bone_age', 'both'];

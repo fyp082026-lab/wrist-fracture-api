@@ -236,13 +236,6 @@ export default function NewScan() {
               <Ionicons name={mode === m ? 'radio-button-on' : 'radio-button-off'} size={18} color={mode === m ? COLORS.primaryBright : COLORS.textMuted} />
             </Pressable>
           ))}
-          <View style={[styles.mode, styles.modeSoon]} accessibilityLabel="Fusion AI, coming soon" accessible>
-            <Ionicons name="git-merge-outline" size={22} color={COLORS.textMuted} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modeTitle}>Fusion AI · coming soon</Text>
-              <Text style={styles.modeText}>Bone-age-aware fracture type (growth plate or shaft).</Text>
-            </View>
-          </View>
         </View>
       </Card>
 
@@ -307,7 +300,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: SPACING.md, minHeight: 56, padding: SPACING.md,
     borderRadius: RADIUS.lg, borderWidth: 1.5, borderColor: COLORS.surfaceBorderHigh, backgroundColor: COLORS.surfaceLowest,
   },
-  modeSoon: { borderStyle: 'dashed', opacity: 0.6 },
   modeTitle: { fontFamily: FONTS.semibold, fontSize: 14, color: COLORS.textSecondary },
   modeText: { fontFamily: FONTS.regular, fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
   progress: { gap: SPACING.md, borderColor: COLORS.primaryMutedBorder },
