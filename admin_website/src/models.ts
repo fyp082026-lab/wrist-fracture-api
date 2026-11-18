@@ -8,7 +8,7 @@
  * and AiModel.tsx (the content of each AI model page).
  */
 
-export type ModelId = 'fracture' | 'bone_age' | 'fusion';
+export type ModelId = 'fracture' | 'bone_age';
 
 export interface Metric {
   label: string;
@@ -16,32 +16,21 @@ export interface Metric {
   sub?: string;
 }
 
-export interface Figure {
-  src: string;
-  title: string;
-  caption: string;
-}
-
 export interface ModelCard {
   id: ModelId;
   name: string;
   module: string;
   architecture: string;
-  status: 'live' | 'not_trained';
   purpose: string;
   dataset: string;
   training: string[];
   metricsTitle: string;
   metrics: Metric[];
-  breakdownTitle?: string;
-  breakdown?: { label: string; value: string; note?: string }[];
-  figures: Figure[];
+  breakdownTitle: string;
+  breakdown: { label: string; value: string; note?: string }[];
   limitations: string[];
   suggestions: { title: string; body: string }[];
 }
-
-// Full URL of a chart image stored in admin_website/public/charts/.
-const FIG = (name: string) => `${import.meta.env.BASE_URL}charts/${name}`;
 
 export const MODELS: Record<ModelId, ModelCard> = {
   fracture: {
@@ -49,7 +38,6 @@ export const MODELS: Record<ModelId, ModelCard> = {
     name: 'Fracture detection',
     module: 'Module B',
     architecture: 'YOLOv8m object detector',
-    status: 'live',
     purpose: 'Finds possible fractures on a wrist X-ray and draws a box with a confidence score around each one.',
     dataset: 'GRAZPEDWRI-DX: pediatric wrist trauma X-rays from Graz, Austria, labelled with 9 classes. Only the "fracture" class is used by the app.',
     training: [
@@ -73,11 +61,6 @@ export const MODELS: Record<ModelId, ModelCard> = {
       { label: '"No fracture" right', value: '94.7%', note: 'negative predictive value' },
       { label: 'Findings 65% and above', value: '97.9% real', note: '91% of all findings' },
       { label: 'Findings 25-65%', value: '65% real', note: 'shown as "lower confidence": about 1 in 3 is a false alarm' },
-    ],
-    figures: [
-      { src: FIG('fracture-pr-curve.png'), title: 'Precision-recall curve', caption: 'Test set. Fracture (green) reaches mAP@0.5 0.936.' },
-      { src: FIG('fracture-f1-curve.png'), title: 'F1-confidence curve', caption: 'Test set. Fracture (green) stays near F1 0.89 from confidence 0.2 to 0.65.' },
-      { src: FIG('fracture-confusion-matrix.png'), title: 'Confusion matrix (normalised)', caption: 'Test set. Columns are the true class.' },
     ],
     limitations: [
       'Trained on one hospital\'s images (Graz). Performance on other hospitals\' X-ray machines is not measured yet.',
@@ -108,7 +91,6 @@ export const MODELS: Record<ModelId, ModelCard> = {
     name: 'Bone age',
     module: 'Module C',
     architecture: 'EfficientNet-B3 regression (X-ray + sex)',
-    status: 'live',
     purpose: 'Estimates skeletal age in months from the X-ray and the patient\'s sex. The patient\'s real age is only shown next to it for comparison.',
     dataset: 'RSNA Pediatric Bone Age: hand X-rays with expert bone-age labels, 15 to 228 months in the test set.',
     training: [
@@ -131,9 +113,6 @@ export const MODELS: Record<ModelId, ModelCard> = {
       { label: '15-19 years', value: '6.5 months', note: '109 X-rays' },
       { label: 'Boys', value: '6.7 months', note: '693 X-rays' },
       { label: 'Girls', value: '7.1 months', note: '569 X-rays' },
-    ],
-    figures: [
-      { src: FIG('bone-age-test-scatter.png'), title: 'Predicted vs true bone age', caption: 'Test set, 1,262 X-rays. Points close to the red line are accurate.' },
     ],
     limitations: [
       'Trained on whole-hand X-rays. A wrist-only X-ray shows fewer of the bones the model learned from.',
@@ -159,39 +138,6 @@ export const MODELS: Record<ModelId, ModelCard> = {
       },
     ],
   },
-
-  fusion: {
-    id: 'fusion',
-    name: 'Fusion AI',
-    module: 'Module D',
-    architecture: 'Bone-age-aware fracture type classifier (CNN)',
-    status: 'not_trained',
-    purpose: 'Will decide whether a detected fracture is a growth-plate injury or a shaft fracture, using the fracture crop from YOLOv8 together with the bone age and sex.',
-    dataset: 'Fracture crops from GRAZPEDWRI-DX, labelled growth plate or shaft by checking whether the fracture box overlaps the growth plate region; a doctor checks a subset.',
-    training: [
-      'Pipeline: EfficientNet bone age → YOLOv8 fracture box → crop → this classifier; only runs when a fracture is found.',
-      'Bone age and sex are joined to the image features at the classifier head.',
-      'Compare against the same model without bone age to show whether bone age helps.',
-    ],
-    metricsTitle: 'Accuracy',
-    metrics: [],
-    figures: [],
-    limitations: ['Not trained yet, so it is not offered in the mobile app.'],
-    suggestions: [
-      {
-        title: 'Prepare the labels first',
-        body: 'Mark the distal radius and ulna growth plates on the GRAZPEDWRI-DX images, then label each fracture box by its overlap with them. Have a doctor confirm a sample (for example 100 crops).',
-      },
-      {
-        title: 'Plan for the hand / wrist mismatch',
-        body: 'Bone age was trained on whole-hand X-rays but fractures on wrist X-rays. Decide whether the fusion model uses the bone age estimate from the wrist image or the patient\'s real age, and test both.',
-      },
-      {
-        title: 'Report the comparison',
-        body: 'Train the classifier with and without bone age on the same split and report accuracy, F1 and a confusion matrix for both; that comparison is the main result of Module D.',
-      },
-    ],
-  },
 };
 
-export const MODEL_ORDER: ModelId[] = ['fracture', 'bone_age', 'fusion'];
+export const MODEL_ORDER: ModelId[] = ['fracture', 'bone_age'];

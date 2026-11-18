@@ -30,7 +30,7 @@ export interface Account {
 
 export type ScanStatus = 'uploaded' | 'analyzing' | 'completed' | 'failed';
 
-/** Which AI models a scan ran (fusion is not trained yet). */
+/** Which AI models a scan ran. */
 export type AnalysisMode = 'fracture' | 'bone_age' | 'both';
 
 /** Readable name of each analysis mode. Shown by the Scans page and the scan drawer. */

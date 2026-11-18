@@ -256,10 +256,7 @@ const modelOf = (p: Page): ModelId | null => (p.startsWith('ai-') ? (p.slice(3) 
 /** [title, subtitle] of a page. Shown in the page header and the sidebar buttons of Dashboard. */
 function titleOf(p: Page): [string, string] {
   const m = modelOf(p);
-  if (m) {
-    const what = MODELS[m].status === 'live' ? 'accuracy, live results and suggestions' : 'not trained yet · plan and suggestions';
-    return [MODELS[m].name, `${MODELS[m].architecture} · ${what}`];
-  }
+  if (m) return [MODELS[m].name, `${MODELS[m].architecture} · accuracy, live results and suggestions`];
   return p === 'users'
     ? ['Users', 'Every account and its role']
     : ['Scans', 'Every X-ray analysed through the server'];
@@ -360,7 +357,6 @@ function Dashboard({ email, onIdle }: { email: string; onIdle: () => void }) {
           {MODEL_ORDER.map((m) => (
             <button key={m} className="nav-btn nav-sub" aria-current={page === `ai-${m}` ? 'page' : undefined} onClick={() => setPage(`ai-${m}`)}>
               {MODELS[m].name}
-              {MODELS[m].status !== 'live' && <span className="nav-note">soon</span>}
             </button>
           ))}
         </div>
@@ -376,7 +372,7 @@ function Dashboard({ email, onIdle }: { email: string; onIdle: () => void }) {
             <h1>{titleOf(page)[0]}</h1>
             <p>{titleOf(page)[1]}</p>
           </div>
-          {(page === 'scans' || (modelOf(page) && modelOf(page) !== 'fusion')) && (
+          {(page === 'scans' || modelOf(page)) && (
             <div className="toolbar">
               <button className="btn" onClick={() => setTick((t) => t + 1)}>Refresh</button>
             </div>
