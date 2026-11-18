@@ -34,3 +34,6 @@ clinician_mobile_app/.expo/
 
 # Local tool config
 .claude/
+
+# Personal write-ups, kept out of the repo
+docs/

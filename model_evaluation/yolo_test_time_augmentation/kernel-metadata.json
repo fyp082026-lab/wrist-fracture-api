@@ -1,0 +1,16 @@
+{
+  "id": "splintered2026/yolov8m-tta-evaluation",
+  "title": "yolov8m-tta-evaluation",
+  "code_file": "evaluate_tta.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": ["jasonroggy/grazpedwri-dx"],
+  "competition_sources": [],
+  "kernel_sources": ["splintered2026/yolov8m-wrist-fracture"],
+  "model_sources": []
+}
