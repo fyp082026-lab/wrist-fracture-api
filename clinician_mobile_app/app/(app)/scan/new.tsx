@@ -25,9 +25,9 @@ import {
   validatePatient,
 } from '@/app_logic/analysis';
 import {
-  ANALYSIS_MODES,
   ANALYSIS_MODE_INFO,
-  DEFAULT_ANALYSIS_MODE,
+  NEW_SCAN_DEFAULT_MODE,
+  SCAN_MODE_CHOICES,
   runsBoneAge,
   type AnalysisMode,
   type PatientSex,
@@ -55,7 +55,7 @@ export default function NewScan() {
   const [years, setYears] = useState('');
   const [months, setMonths] = useState('');
   const [sex, setSex] = useState<PatientSex | null>(null);
-  const [mode, setMode] = useState<AnalysisMode>(DEFAULT_ANALYSIS_MODE);
+  const [mode, setMode] = useState<AnalysisMode>(NEW_SCAN_DEFAULT_MODE);
   const [stage, setStage] = useState<Stage>('idle');
   const [error, setError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -212,7 +212,7 @@ export default function NewScan() {
       <Card style={{ marginBottom: SPACING.lg }}>
         <Text style={[ui.h2, { marginBottom: SPACING.md }]}>3 · AI analysis</Text>
         <View style={{ gap: SPACING.sm }} accessibilityRole="radiogroup">
-          {ANALYSIS_MODES.map((m) => (
+          {SCAN_MODE_CHOICES.map((m) => (
             <Pressable
               key={m}
               disabled={busy}

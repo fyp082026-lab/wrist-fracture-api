@@ -2,9 +2,12 @@
 // Run with `npm test`; nothing here touches the network or the real database.
 import { describe, expect, it } from '@jest/globals';
 import {
+  ANALYSIS_MODES,
   BAND_EVIDENCE,
   ContractError,
   LOW_CONFIDENCE_THRESHOLD,
+  NEW_SCAN_DEFAULT_MODE,
+  SCAN_MODE_CHOICES,
   bandEvidence,
   deriveFindingStatus,
   formatAgeMonths,
@@ -223,5 +226,15 @@ describe('analysis modes', () => {
     const row = parseAnalysisResultRow({ scan_id: 's1', fracture_detected: false, bone_age_months: 100 });
     expect(row.analysis_mode).toBe('both');
     expect(toAnalysisMode('fusion')).toBe('both');
+  });
+
+  it('offers only fracture and bone age on New scan, defaulting to fracture', () => {
+    expect(SCAN_MODE_CHOICES).toEqual(['fracture', 'bone_age']);
+    expect(NEW_SCAN_DEFAULT_MODE).toBe('fracture');
+  });
+
+  it('still reads a saved "both" scan from history', () => {
+    expect(toAnalysisMode('both')).toBe('both');
+    expect(ANALYSIS_MODES).toContain('both');
   });
 });

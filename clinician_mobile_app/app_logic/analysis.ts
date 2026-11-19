@@ -32,7 +32,7 @@ import {
   type PatientSex,
   STORAGE_BUCKET,
   type ScanStatus,
-  DEFAULT_ANALYSIS_MODE,
+  NEW_SCAN_DEFAULT_MODE,
   buildImagePath,
   formatAgeMonths,
   parseAnalysisResultRow,
@@ -611,7 +611,7 @@ export async function runAnalysisPipeline(input: AnalysisInput): Promise<Analyze
 
   // STEP 1 - create (or reuse) the patient and scan rows. onProgress updates the scan form's status text.
   input.onProgress?.('uploading');
-  const scan = await ensureScanRecord(userId, scanId, input.patient, input.mode ?? DEFAULT_ANALYSIS_MODE);
+  const scan = await ensureScanRecord(userId, scanId, input.patient, input.mode ?? NEW_SCAN_DEFAULT_MODE);
   const ageMonths = scan.patient.ageMonths;
   throwIfCancelled(signal);
 

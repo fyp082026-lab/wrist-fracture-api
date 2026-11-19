@@ -50,7 +50,12 @@ export type ScanStatus = 'uploaded' | 'analyzing' | 'completed' | 'failed';
  * (EfficientNet, Module C), or both.
  */
 export type AnalysisMode = 'fracture' | 'bone_age' | 'both';
+// Every mode the stored data can hold, so older scans with "both" still read correctly.
 export const ANALYSIS_MODES: readonly AnalysisMode[] = ['fracture', 'bone_age', 'both'];
+// What a clinician can pick on New scan. "both" is hidden for now; it stays in ANALYSIS_MODES.
+export const SCAN_MODE_CHOICES: readonly AnalysisMode[] = ['fracture', 'bone_age'];
+export const NEW_SCAN_DEFAULT_MODE: AnalysisMode = 'fracture';
+// Fallback for stored values that are missing or unknown (scans saved before modes ran both models).
 export const DEFAULT_ANALYSIS_MODE: AnalysisMode = 'both';
 
 // Does this mode run the model? Used by the result screen, history rows and the parsers below.
